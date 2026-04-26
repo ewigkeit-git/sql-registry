@@ -1,0 +1,31 @@
+{
+  "name": "sql-registry",
+  "version": "0.1.0",
+  "description": "Lightweight SQL registry with named parameters",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "commonjs",
+  "scripts": {
+    "build": "tsc",
+    "test": "npm run build && node test/run.js",
+    "prepack": "npm run build"
+  },
+  "files": [
+    "dist/"
+  ],
+  "keywords": [
+    "sql",
+    "registry",
+    "db",
+    "named-parameter"
+  ],
+  "author": "Takashi Kushibiki",
+  "license": "MIT",
+  "dependencies": {
+    "acorn": "^8.16.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.17",
+    "typescript": "^5.8.3"
+  }
+}

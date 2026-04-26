@@ -1,0 +1,743 @@
+const fs = require("fs");
+const path = require("path");
+const acorn = require("acorn");
+const { extractNamedParams } = require("./param-parser");
+const { normalizeDialect } = require("./dialect");
+const { bindSql } = require("./binder");
+const { SqlBuilder, SqlBuilderError } = require("./builder");
+const { transpileBuilderScript } = require("./builder-script");
+const {
+  buildParamTypeMap,
+  normalizeParamType,
+  validateParamTypes
+} = require("./param-types");
+
+type ParamMeta = {
+  name: string;
+  description: string;
+  type?: string;
+};
+
+type QueryMeta = {
+  description?: string;
+  tags?: string[];
+  params: ParamMeta[];
+  orderable?: Record<string, string>;
+  builder?: string;
+};
+
+type QueryEntry = {
+  meta: QueryMeta;
+  sql: Record<string, string>;
+};
+
+type ParseMarkdownResult = {
+  queries: Record<string, QueryEntry>;
+  errors: string[];
+  files: string[];
+};
+
+type ImportDirective = {
+  path: string;
+  namespace: string | null;
+  description: string;
+};
+
+type ImportDirectiveError = {
+  error: string;
+};
+
+type SqlRegistryOptions = {
+  strict?: boolean;
+  dialect?: string;
+};
+
+type BindOptions = {
+  strict?: boolean;
+};
+
+type BuilderOptions = {
+  params?: Record<string, unknown>;
+  context?: Record<string, unknown>;
+  orderable?: Record<string, string>;
+  dialect?: string;
+  runScript?: boolean;
+  maxLimit?: number;
+  maxOffset?: number;
+};
+
+type AstNode = {
+  type: string;
+  [key: string]: unknown;
+};
+
+function getErrorMessage(err: unknown) {
+  return err instanceof Error ? err.message : String(err);
+}
+
+function asAstNode(value: unknown): AstNode | null {
+  return value && typeof value === "object" && "type" in value
+    ? value as AstNode
+    : null;
+}
+
+function astArray(value: unknown): AstNode[] {
+  return Array.isArray(value)
+    ? value.map(asAstNode).filter((node): node is AstNode => Boolean(node))
+    : [];
+}
+
+function isImportDirectiveError(parsed: ImportDirective | ImportDirectiveError): parsed is ImportDirectiveError {
+  return "error" in parsed;
+}
+
+class SqlRegistryError extends Error {
+  details: Record<string, unknown>;
+
+  constructor(message: string, details: Record<string, unknown> = {}) {
+    super(message);
+    this.name = "SqlRegistryError";
+    this.details = details;
+  }
+}
+
+class SqlRegistryValidationError extends SqlRegistryError {
+  errors: string[];
+
+  constructor(message: string, errors: string[] = []) {
+    super(message, { errors });
+    this.name = "SqlRegistryValidationError";
+    this.errors = errors;
+  }
+}
+
+function parseParamMeta(value: string): ParamMeta {
+  const match = value.trim().match(/^([A-Za-z_][A-Za-z0-9_]*)(?::([A-Za-z_][A-Za-z0-9_]*))?(?:\s*-\s*(.+))?$/);
+  if (!match) {
+    throw new SqlRegistryError(`invalid param format: ${value}`);
+  }
+
+  const meta: ParamMeta = {
+    name: match[1],
+    description: match[3] ? match[3].trim() : ""
+  };
+
+  if (match[2]) {
+    meta.type = normalizeParamType(match[2]);
+  }
+
+  return meta;
+}
+
+function parseSqlInfo(info: string) {
+  const parts = String(info || "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0 || parts[0] !== "sql") return null;
+  if (!parts[1] || parts[1] === "default") return "default";
+  return normalizeDialect(parts[1]);
+}
+
+function parseBuilderInfo(info: string) {
+  const parts = String(info || "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length !== 2) return false;
+  return ["js", "javascript", "ts", "typescript"].includes(parts[0]) && parts[1] === "builder";
+}
+
+function stripMarkdownListMarker(text: string) {
+  return text.replace(/^[-*+]\s+/, "");
+}
+
+function findDuplicates(arr: string[]) {
+  const seen = new Set<string>();
+  const dup = new Set<string>();
+
+  for (const v of arr) {
+    if (seen.has(v)) dup.add(v);
+    seen.add(v);
+  }
+
+  return [...dup];
+}
+
+function validateEntry(name: string, entry: QueryEntry) {
+  const errors: string[] = [];
+
+  if (!entry.sql.default || !entry.sql.default.trim()) {
+    errors.push(`[${name}] default sql block is required`);
+  }
+
+  const paramDefs = Array.isArray(entry.meta.params) ? entry.meta.params : [];
+  const paramNames = paramDefs.map((p: ParamMeta) => p.name);
+  const builderMeta = extractBuilderScriptMeta(entry.meta.builder || "");
+  const declaredParamNames = [...new Set([...paramNames, ...builderMeta.inputParams])];
+  const builderInputParamNames = new Set(builderMeta.inputParams);
+  const dynamicallyBoundParamNames = new Set(builderMeta.boundParams);
+
+  const dupParams = findDuplicates(paramNames);
+  if (dupParams.length > 0) {
+    errors.push(`[${name}] duplicate params in meta: ${dupParams.join(", ")}`);
+  }
+
+  for (const [dialect, sqlValue] of Object.entries(entry.sql)) {
+    const sql = String(sqlValue || "");
+    if (!sql || !sql.trim()) {
+      errors.push(`[${name}][${dialect}] SQL block is empty`);
+      continue;
+    }
+
+    const sqlParams: string[] = extractNamedParams(sql);
+    const metaOnly = declaredParamNames.filter(
+      p => !sqlParams.includes(p) &&
+        !dynamicallyBoundParamNames.has(p) &&
+        !builderInputParamNames.has(p)
+    );
+    const sqlOnly = sqlParams.filter((p: string) => !declaredParamNames.includes(p));
+
+    if (metaOnly.length > 0) {
+      errors.push(
+        `[${name}][${dialect}] params declared in meta but not used in SQL: ${metaOnly.join(", ")}`
+      );
+    }
+
+    if (sqlOnly.length > 0) {
+      errors.push(
+        `[${name}][${dialect}] params used in SQL but not declared in meta: ${sqlOnly.join(", ")}`
+      );
+    }
+  }
+
+  return errors;
+}
+
+function extractBuilderScriptMeta(code: string) {
+  const inputParams = new Set<string>();
+  const boundParams = new Set<string>();
+
+  if (!code || !code.trim()) {
+    return {
+      inputParams: [],
+      boundParams: []
+    };
+  }
+
+  let ast;
+  try {
+    ast = acorn.parse(transpileBuilderScript(code), {
+      ecmaVersion: 2020,
+      sourceType: "script"
+    });
+  } catch {
+    return {
+      inputParams: [],
+      boundParams: []
+    };
+  }
+
+  function visit(node: unknown) {
+    const astNode = asAstNode(node);
+    if (!node || typeof node !== "object") return;
+
+    if (Array.isArray(node)) {
+      for (const item of node) visit(item);
+      return;
+    }
+
+    if (
+      astNode?.type === "MemberExpression" &&
+      !astNode.computed &&
+      asAstNode(astNode.object)?.type === "Identifier" &&
+      asAstNode(astNode.object)?.name === "params" &&
+      asAstNode(astNode.property)?.type === "Identifier"
+    ) {
+      inputParams.add(String(asAstNode(astNode.property)?.name));
+    }
+
+    if (astNode?.type === "CallExpression") {
+      const calleeName = getCalleeName(astNode.callee);
+      const objectArgIndex = calleeName === "param"
+        ? 0
+        : calleeName !== null && ["append", "appendQuery"].includes(calleeName)
+          ? 2
+          : -1;
+
+      if (objectArgIndex >= 0) {
+        const objectArg = astArray(astNode.arguments)[objectArgIndex];
+        if (objectArg && objectArg.type === "ObjectExpression") {
+          for (const property of astArray(objectArg.properties)) {
+            if (
+              property.type === "Property" &&
+              !property.computed &&
+              property.key
+            ) {
+              const key = asAstNode(property.key);
+              if (key?.type === "Identifier") {
+                boundParams.add(String(key.name));
+              } else if (key?.type === "Literal") {
+                boundParams.add(String(key.value));
+              }
+            }
+          }
+        }
+      }
+    }
+
+    for (const value of Object.values(node)) {
+      if (value && typeof value === "object") {
+        visit(value);
+      }
+    }
+  }
+
+  visit(ast);
+
+  return {
+    inputParams: [...inputParams],
+    boundParams: [...boundParams]
+  };
+}
+
+function getCalleeName(callee: unknown) {
+  const node = asAstNode(callee);
+  if (!node) return null;
+  if (node.type === "Identifier") return String(node.name);
+  const property = asAstNode(node.property);
+  if (node.type === "MemberExpression" && !node.computed && property?.type === "Identifier") {
+    return String(property.name);
+  }
+  return null;
+}
+
+function parseImportDirective(line: string): ImportDirective | ImportDirectiveError | null {
+  const trimmed = line.trim();
+
+  if (!trimmed.startsWith("@import ")) {
+    return null;
+  }
+
+  // @import "./child.md"
+  // @import "./child.md" as user
+  // @import "./child.md" - 説明
+  // @import "./child.md" as user - 説明
+  const match = trimmed.match(
+    /^@import\s+"([^"]+)"(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?(?:\s+-\s+(.+))?$/
+  );
+
+  if (!match) {
+    return {
+      error: `invalid import syntax: ${line}`
+    };
+  }
+
+  return {
+    path: match[1].trim(),
+    namespace: match[2] ? match[2].trim() : null,
+    description: match[3] ? match[3].trim() : ""
+  };
+}
+
+function resolveImports(
+  filePath: string,
+  stack: string[] = [],
+  namespacePrefix = "",
+  collectedFiles = new Set<string>()
+): string {
+  const fullPath = path.resolve(filePath);
+
+  if (stack.includes(fullPath)) {
+    throw new SqlRegistryError(
+      `circular import detected: ${[...stack, fullPath].join(" -> ")}`
+    );
+  }
+
+  if (!fs.existsSync(fullPath)) {
+    throw new SqlRegistryError(`markdown file not found: ${fullPath}`);
+  }
+
+  collectedFiles.add(fullPath);
+
+  const src = fs.readFileSync(fullPath, "utf-8");
+  const dir = path.dirname(fullPath);
+  const lines = src.split(/\r?\n/);
+  const out = [];
+
+  for (const line of lines) {
+    const parsed = parseImportDirective(line);
+
+    if (!parsed) {
+      out.push(line);
+      continue;
+    }
+
+    if (isImportDirectiveError(parsed)) {
+      throw new SqlRegistryError(`${parsed.error} in ${fullPath}`);
+    }
+
+    const importTarget = parsed.path;
+    const importNamespace = parsed.namespace;
+    const importDescription = parsed.description;
+
+    const childPath = path.resolve(dir, importTarget);
+    const nextPrefix = importNamespace
+      ? (namespacePrefix ? `${namespacePrefix}.${importNamespace}` : importNamespace)
+      : namespacePrefix;
+
+    const expanded = resolveImports(
+      childPath,
+      [...stack, fullPath],
+      nextPrefix,
+      collectedFiles
+    );
+
+    if (importDescription || importNamespace) {
+    const metaParts: string[] = [];
+      if (importNamespace) metaParts.push(`ns=${nextPrefix}`);
+      if (importDescription) metaParts.push(`desc=${importDescription}`);
+      out.push(`<!-- import: ${importTarget}${metaParts.length ? " | " + metaParts.join(" | ") : ""} -->`);
+    }
+
+    out.push(expanded);
+  }
+
+  const joined = out.join("\n");
+
+  if (!namespacePrefix) {
+    return joined;
+  }
+
+  return joined.replace(/^##\s+(.+)$/gm, (_, name) => {
+    const trimmedName = String(name).trim();
+    if (!trimmedName) return `## ${trimmedName}`;
+    return `## ${namespacePrefix}.${trimmedName}`;
+  });
+}
+
+function parseMarkdownFile(filePath: string): ParseMarkdownResult {
+  const collectedFiles = new Set<string>();
+  const src = resolveImports(filePath, [], "", collectedFiles);
+  const lines = src.split(/\r?\n/);
+  const queries: Record<string, QueryEntry> = {};
+  const errors: string[] = [];
+
+  let currentName: string | null = null;
+  let currentMeta: Partial<QueryMeta> = {};
+  let currentParams: ParamMeta[] = [];
+  let currentSql: Record<string, string> = {};
+
+  function flush() {
+    if (!currentName) return;
+
+    if (queries[currentName]) {
+      errors.push(`${filePath}: duplicate query name in file: ${currentName}`);
+      return;
+    }
+
+    const entry: QueryEntry = {
+      meta: {
+        ...currentMeta,
+        params: currentParams
+      } as QueryMeta,
+      sql: currentSql
+    };
+
+    errors.push(...validateEntry(currentName, entry).map(e => `${filePath}: ${e}`));
+    queries[currentName] = entry;
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const headingMatch = line.match(/^##\s+(.+)$/);
+
+    if (headingMatch) {
+      flush();
+      currentName = headingMatch[1].trim();
+      currentMeta = {};
+      currentParams = [];
+      currentSql = {};
+
+      if (!currentName) {
+        errors.push(`${filePath}: empty query name`);
+      }
+
+      continue;
+    }
+
+    if (!currentName) continue;
+
+    const fenceMatch = line.match(/^```(.*)$/);
+    if (fenceMatch) {
+      const info = fenceMatch[1].trim();
+      const contentLines: string[] = [];
+      let closed = false;
+
+      while (++i < lines.length) {
+        if (/^```/.test(lines[i])) {
+          closed = true;
+          break;
+        }
+        contentLines.push(lines[i]);
+      }
+
+      if (!closed) {
+        errors.push(`${filePath}: [${currentName}] unclosed fenced block`);
+        break;
+      }
+
+      const content = contentLines.join("\n").trim();
+      const dialect = parseSqlInfo(info);
+      if (dialect) {
+        if (currentSql[dialect]) {
+          errors.push(`${filePath}: [${currentName}] duplicate sql block for dialect: ${dialect}`);
+        } else {
+          currentSql[dialect] = content;
+        }
+        continue;
+      }
+
+      if (parseBuilderInfo(info)) {
+        if ("builder" in currentMeta) {
+          errors.push(`${filePath}: [${currentName}] duplicate builder block`);
+        } else {
+          currentMeta.builder = content;
+        }
+      }
+
+      continue;
+    }
+
+    const text = stripMarkdownListMarker(line.trim());
+    if (!text) continue;
+
+    if (text === "orderable:") {
+      if ("orderable" in currentMeta) {
+        errors.push(`${filePath}: [${currentName}] duplicate meta key: orderable`);
+      } else {
+        const orderable: Record<string, string> = {};
+        let foundEntry = false;
+
+        while (i + 1 < lines.length) {
+          const nextLine = lines[i + 1];
+          if (!nextLine.trim()) {
+            i++;
+            continue;
+          }
+
+          const orderableMatch = nextLine.match(/^\s{2,}([A-Za-z_][A-Za-z0-9_]*):\s*(.+)$/);
+          if (!orderableMatch) break;
+
+          foundEntry = true;
+          orderable[orderableMatch[1]] = orderableMatch[2].trim();
+          i++;
+        }
+
+        if (!foundEntry) {
+          errors.push(`${filePath}: [${currentName}] orderable block is empty`);
+        } else {
+          currentMeta.orderable = orderable;
+        }
+      }
+
+      continue;
+    }
+
+    if (!text.startsWith("param:") && !text.includes(":")) {
+      if ("description" in currentMeta) {
+        currentMeta.description = [currentMeta.description, text]
+          .filter(Boolean)
+          .join("\n");
+      }
+      continue;
+    }
+
+    const idx = text.indexOf(":");
+    const key = text.slice(0, idx).trim();
+    const value = text.slice(idx + 1).trim();
+
+    if (key === "param") {
+      try {
+        currentParams.push(parseParamMeta(value));
+      } catch (err: unknown) {
+        errors.push(`${filePath}: [${currentName}] ${getErrorMessage(err)}`);
+      }
+      continue;
+    }
+
+    if (key === "description") {
+      if ("description" in currentMeta) {
+        errors.push(`${filePath}: [${currentName}] duplicate meta key: description`);
+      } else {
+        currentMeta.description = value;
+      }
+      continue;
+    }
+
+    if (key === "tags") {
+      if ("tags" in currentMeta) {
+        errors.push(`${filePath}: [${currentName}] duplicate meta key: tags`);
+      } else {
+        currentMeta.tags = value
+          .split(",")
+          .map((v: string) => v.trim())
+          .filter(Boolean);
+      }
+      continue;
+    }
+
+    errors.push(`${filePath}: [${currentName}] unknown meta key: ${key}`);
+  }
+
+  flush();
+
+  return {
+    queries,
+    errors,
+    files: [...collectedFiles]
+  };
+}
+
+function resolveSql(entry: QueryEntry | null | undefined, dialect: string) {
+  if (!entry || !entry.sql) return null;
+  return entry.sql[dialect] || entry.sql.default || null;
+}
+
+class SqlRegistry {
+  strict: boolean;
+  dialect: string;
+  queries: Record<string, QueryEntry>;
+  files: string[];
+
+  constructor(options: SqlRegistryOptions = {}) {
+    this.strict = options.strict !== false;
+    this.dialect = normalizeDialect(options.dialect);
+    this.queries = {};
+    this.files = [];
+  }
+
+  loadFile(filePath: string) {
+    const result = parseMarkdownFile(filePath);
+
+    if (result.errors.length > 0 && this.strict) {
+      throw new SqlRegistryValidationError(
+        "failed to load markdown registry file",
+        result.errors
+      );
+    }
+
+    for (const [name, entry] of Object.entries(result.queries)) {
+      if (this.queries[name]) {
+        const error = `duplicate query name across registry: ${name}`;
+        if (this.strict) {
+          throw new SqlRegistryValidationError("failed to merge registry", [error]);
+        }
+        continue;
+      }
+      this.queries[name] = entry;
+    }
+
+    for (const file of result.files || [path.resolve(filePath)]) {
+      if (!this.files.includes(file)) {
+        this.files.push(file);
+      }
+    }
+
+    return this;
+  }
+
+  has(name: string) {
+    return Boolean(this.queries[name]);
+  }
+
+  get(name: string) {
+    const entry = this.queries[name];
+    if (!entry) {
+      throw new SqlRegistryError(`query not found: ${name}`, {
+        queryName: name
+      });
+    }
+    return entry;
+  }
+
+  getMeta(name: string) {
+    return this.get(name).meta;
+  }
+
+  getSql(name: string) {
+    const entry = this.get(name);
+    const dialect = this.dialect || "default";
+    const sql = entry.sql[dialect] || entry.sql.default;
+
+    if (!sql) {
+      throw new SqlRegistryError(`sql not found`, {
+        queryName: name,
+        dialect
+      });
+    }
+
+    return sql;
+  }
+
+  bind(name: string, params: Record<string, unknown> = {}, options: BindOptions = {}) {
+    const entry = this.get(name);
+    validateParamTypes(params, buildParamTypeMap(entry.meta.params));
+    const sql = this.getSql(name);
+    return bindSql(sql, params, options);
+  }
+
+  builder(name: string, options: BuilderOptions = {}) {
+    const entry = this.get(name);
+    const sql = this.getSql(name);
+    const paramTypes = buildParamTypeMap(entry.meta.params);
+    validateParamTypes(options.params || {}, paramTypes);
+    const orderable = {
+      ...(entry.meta.orderable || {}),
+      ...(options.orderable || {})
+    };
+    const builder = new SqlBuilder(this, name, sql, {
+      ...options,
+      dialect: options.dialect || this.dialect,
+      orderable,
+      paramTypes
+    });
+    const baseParams: Record<string, unknown> = {};
+    const inputParams = options.params || {};
+
+    for (const paramName of extractNamedParams(sql)) {
+      if (Object.prototype.hasOwnProperty.call(inputParams, paramName)) {
+        baseParams[paramName] = inputParams[paramName];
+      }
+    }
+
+    builder.addParams(baseParams);
+
+    if (entry.meta.builder && options.runScript !== false) {
+      builder.runBuilderScript(entry.meta.builder, {
+        params: inputParams,
+        context: options.context || {}
+      });
+    }
+
+    return builder;
+  }
+
+  list() {
+    return Object.keys(this.queries).sort();
+  }
+
+  toJSON() {
+    return {
+      files: [...this.files],
+      queries: this.queries
+    };
+  }
+}
+
+module.exports = {
+  SqlRegistry,
+  SqlRegistryError,
+  SqlRegistryValidationError,
+  SqlBuilder,
+  SqlBuilderError,
+  parseMarkdownFile,
+  resolveSql,
+  extractNamedParams,
+  resolveImports,
+  parseImportDirective
+};
