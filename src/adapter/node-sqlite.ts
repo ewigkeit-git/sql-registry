@@ -1,4 +1,4 @@
-const { SqlRegistryAdapter } = require("./base");
+import { SqlBuilderLike, SqlRegistryAdapter, SqlRegistryLike } from "./base";
 
 const DEFAULT_METHOD = "all";
 const WRITE_METHOD = "run";
@@ -30,17 +30,17 @@ type NodeSqliteOptions = {
   [name: string]: unknown;
 };
 
-class NodeSqliteAdapter extends SqlRegistryAdapter {
+export class NodeSqliteAdapter extends SqlRegistryAdapter {
   db: NodeSqliteDatabase | null;
 
   constructor(dbOrRegistry: unknown, registryOrOptions: unknown = {}, options: NodeSqliteOptions = {}) {
     if (isDatabaseLike(dbOrRegistry)) {
-      super(registryOrOptions, options);
+      super(registryOrOptions as SqlRegistryLike, options);
       this.db = dbOrRegistry;
       return;
     }
 
-    super(dbOrRegistry, registryOrOptions);
+    super(dbOrRegistry as SqlRegistryLike, registryOrOptions as Record<string, unknown>);
     this.db = null;
   }
 
@@ -56,12 +56,12 @@ class NodeSqliteAdapter extends SqlRegistryAdapter {
 
   async execute(dbOrBuilder: unknown, builderOrOptions?: unknown, maybeOptions?: NodeSqliteOptions) {
     const { db, builder, options } = this.resolveBuilderArgs(dbOrBuilder, builderOrOptions, maybeOptions);
-    return super.execute(db, builder, options);
+    return super.execute(db, builder as SqlBuilderLike, options);
   }
 
   async executeExplain(dbOrBuilder: unknown, builderOrOptions?: unknown, maybeOptions?: NodeSqliteOptions) {
     const { db, builder, options } = this.resolveBuilderArgs(dbOrBuilder, builderOrOptions, maybeOptions);
-    return super.executeExplain(db, builder, options);
+    return super.executeExplain(db, builder as SqlBuilderLike, options);
   }
 
   executeStatement(db: NodeSqliteDatabase | null | undefined, stmt: SqlStatement, options: NodeSqliteOptions = {}) {
@@ -163,7 +163,3 @@ function applyStatementOptions(statement: NodeSqliteStatement, queryOptions: Rec
 
   return statement;
 }
-
-module.exports = {
-  NodeSqliteAdapter
-};

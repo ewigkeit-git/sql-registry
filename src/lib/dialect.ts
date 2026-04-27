@@ -1,10 +1,10 @@
-const DIALECT = Object.freeze({
+export const DIALECT = Object.freeze({
   SQLITE: "sqlite",
   MYSQL: "mysql",
   PG: "pg"
 });
 
-function normalizeDialect(input?: string) {
+export function normalizeDialect(input?: string) {
   if (!input) return DIALECT.SQLITE;
 
   const v = String(input).toLowerCase();
@@ -15,8 +15,3 @@ function normalizeDialect(input?: string) {
 
   throw new Error(`unsupported dialect: ${input}`);
 }
-
-module.exports = {
-  DIALECT,
-  normalizeDialect
-};

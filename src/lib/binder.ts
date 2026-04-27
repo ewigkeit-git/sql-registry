@@ -1,8 +1,13 @@
-const { extractNamedParamTokens } = require("./param-parser");
-const { SqlBindError, validateBindParams } = require("./bind-validator");
-const { compileSql } = require("./sql-compiler");
+import { extractNamedParamTokens } from "./param-parser";
+import { SqlBindError, validateBindParams } from "./bind-validator";
+import { compileSql } from "./sql-compiler";
 
-function bindSql(sql: string, params: Record<string, unknown> = {}, options: { strict?: boolean } = {}) {
+export type SqlStatement = {
+  sql: string;
+  values: unknown[];
+};
+
+export function bindSql(sql: string, params: Record<string, unknown> = {}, options: { strict?: boolean } = {}): SqlStatement {
   const tokens = extractNamedParamTokens(sql);
   const names = [...new Set(tokens.map((token: { name: string }) => token.name))];
 
@@ -10,7 +15,4 @@ function bindSql(sql: string, params: Record<string, unknown> = {}, options: { s
   return compileSql(sql, tokens, params);
 }
 
-module.exports = {
-  SqlBindError,
-  bindSql
-};
+export { SqlBindError };

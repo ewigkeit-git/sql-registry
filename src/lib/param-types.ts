@@ -1,4 +1,4 @@
-const PARAM_TYPES = Object.freeze({
+export const PARAM_TYPES = Object.freeze({
   ANY: "any",
   STRING: "string",
   NUMBER: "number",
@@ -22,7 +22,7 @@ const TYPE_ALIASES: Record<string, string> = Object.freeze({
   json: PARAM_TYPES.JSON
 });
 
-class SqlParamTypeError extends Error {
+export class SqlParamTypeError extends Error {
   details: Record<string, unknown>;
 
   constructor(message: string, details: Record<string, unknown> = {}) {
@@ -32,7 +32,7 @@ class SqlParamTypeError extends Error {
   }
 }
 
-function normalizeParamType(type: string) {
+export function normalizeParamType(type: string) {
   if (!type) return null;
 
   const normalized = TYPE_ALIASES[String(type).trim().toLowerCase()];
@@ -90,7 +90,7 @@ type ParamDef = {
   type?: string;
 };
 
-function buildParamTypeMap(paramDefs: ParamDef[] = []) {
+export function buildParamTypeMap(paramDefs: ParamDef[] = []) {
   const out: Record<string, string> = {};
 
   for (const def of paramDefs) {
@@ -102,7 +102,7 @@ function buildParamTypeMap(paramDefs: ParamDef[] = []) {
   return out;
 }
 
-function validateParamTypes(params: Record<string, unknown> = {}, paramTypes: Record<string, string> = {}) {
+export function validateParamTypes(params: Record<string, unknown> = {}, paramTypes: Record<string, string> = {}) {
   for (const [name, type] of Object.entries(paramTypes)) {
     if (!(name in params)) continue;
 
@@ -116,11 +116,3 @@ function validateParamTypes(params: Record<string, unknown> = {}, paramTypes: Re
     }
   }
 }
-
-module.exports = {
-  PARAM_TYPES,
-  SqlParamTypeError,
-  normalizeParamType,
-  buildParamTypeMap,
-  validateParamTypes
-};

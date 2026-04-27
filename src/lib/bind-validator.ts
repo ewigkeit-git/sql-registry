@@ -1,4 +1,4 @@
-class SqlBindError extends Error {
+export class SqlBindError extends Error {
   details: Record<string, unknown>;
 
   constructor(message: string, details: Record<string, unknown> = {}) {
@@ -8,7 +8,7 @@ class SqlBindError extends Error {
   }
 }
 
-function validateBindParams(sql: string, paramNames: string[], params: Record<string, unknown> = {}, options: { strict?: boolean } = {}) {
+export function validateBindParams(sql: string, paramNames: string[], params: Record<string, unknown> = {}, options: { strict?: boolean } = {}) {
   const { strict = true } = options;
 
   const missing = paramNames.filter(name => !(name in params));
@@ -29,8 +29,3 @@ function validateBindParams(sql: string, paramNames: string[], params: Record<st
     }
   }
 }
-
-module.exports = {
-  SqlBindError,
-  validateBindParams
-};

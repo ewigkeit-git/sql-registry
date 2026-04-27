@@ -1,11 +1,11 @@
-const { extractNamedParams } = require("../lib/param-parser");
+import { extractNamedParams } from "../lib/param-parser";
 
-type SqlStatement = {
+export type SqlStatement = {
   sql: string;
   values: unknown[];
 };
 
-type AdapterOptions = {
+export type AdapterOptions = {
   context?: Record<string, unknown>;
   params?: Record<string, unknown>;
   buildOptions?: {
@@ -16,18 +16,18 @@ type AdapterOptions = {
   method?: string;
 };
 
-type SqlBuilderLike = {
+export type SqlBuilderLike = {
   baseSql: string;
   addParams: (params: Record<string, unknown>) => SqlBuilderLike;
   build: (options?: Record<string, unknown>) => SqlStatement;
   buildExplain: (options?: Record<string, unknown>) => SqlStatement;
 };
 
-type SqlRegistryLike = {
+export type SqlRegistryLike = {
   builder: (name: string, options?: AdapterOptions) => SqlBuilderLike;
 };
 
-class SqlRegistryAdapter {
+export class SqlRegistryAdapter {
   registry: SqlRegistryLike;
   defaultContext: Record<string, unknown>;
 
@@ -70,31 +70,27 @@ class SqlRegistryAdapter {
     return this.createBuilder(name, options).buildExplain(options.explainOptions || {});
   }
 
-  async query(executor: unknown, name: string, options: AdapterOptions = {}) {
+  async query(executor: unknown, name: string, options: AdapterOptions = {}): Promise<unknown> {
     const stmt = this.build(name, options);
     return this.executeStatement(executor, stmt, options);
   }
 
-  async explain(executor: unknown, name: string, options: AdapterOptions = {}) {
+  async explain(executor: unknown, name: string, options: AdapterOptions = {}): Promise<unknown> {
     const stmt = this.buildExplain(name, options);
     return this.executeStatement(executor, stmt, options);
   }
 
-  async execute(executor: unknown, builder: SqlBuilderLike, options: AdapterOptions = {}) {
+  async execute(executor: unknown, builder: SqlBuilderLike, options: AdapterOptions = {}): Promise<unknown> {
     const stmt = builder.build(options.buildOptions || {});
     return this.executeStatement(executor, stmt, options);
   }
 
-  async executeExplain(executor: unknown, builder: SqlBuilderLike, options: AdapterOptions = {}) {
+  async executeExplain(executor: unknown, builder: SqlBuilderLike, options: AdapterOptions = {}): Promise<unknown> {
     const stmt = builder.buildExplain(options.explainOptions || {});
     return this.executeStatement(executor, stmt, options);
   }
 
-  async executeStatement(_executor?: unknown, _stmt?: SqlStatement, _options?: AdapterOptions) {
+  executeStatement(_executor?: unknown, _stmt?: SqlStatement, _options?: AdapterOptions): unknown {
     throw new Error("executeStatement(executor, stmt, options) must be implemented");
   }
 }
-
-module.exports = {
-  SqlRegistryAdapter
-};

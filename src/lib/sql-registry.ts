@@ -1,24 +1,24 @@
 const fs = require("fs");
 const path = require("path");
 const acorn = require("acorn");
-const { extractNamedParams } = require("./param-parser");
-const { normalizeDialect } = require("./dialect");
-const { bindSql } = require("./binder");
-const { SqlBuilder, SqlBuilderError } = require("./builder");
-const { transpileBuilderScript } = require("./builder-script");
-const {
+import { extractNamedParams } from "./param-parser";
+import { normalizeDialect } from "./dialect";
+import { bindSql } from "./binder";
+import { SqlBuilder, SqlBuilderError } from "./builder";
+import { transpileBuilderScript } from "./builder-script";
+import {
   buildParamTypeMap,
   normalizeParamType,
   validateParamTypes
-} = require("./param-types");
+} from "./param-types";
 
-type ParamMeta = {
+export type ParamMeta = {
   name: string;
   description: string;
   type?: string;
 };
 
-type QueryMeta = {
+export type QueryMeta = {
   description?: string;
   tags?: string[];
   params: ParamMeta[];
@@ -26,37 +26,37 @@ type QueryMeta = {
   builder?: string;
 };
 
-type QueryEntry = {
+export type QueryEntry = {
   meta: QueryMeta;
   sql: Record<string, string>;
 };
 
-type ParseMarkdownResult = {
+export type ParseMarkdownResult = {
   queries: Record<string, QueryEntry>;
   errors: string[];
   files: string[];
 };
 
-type ImportDirective = {
+export type ImportDirective = {
   path: string;
   namespace: string | null;
   description: string;
 };
 
-type ImportDirectiveError = {
+export type ImportDirectiveError = {
   error: string;
 };
 
-type SqlRegistryOptions = {
+export type SqlRegistryOptions = {
   strict?: boolean;
   dialect?: string;
 };
 
-type BindOptions = {
+export type BindOptions = {
   strict?: boolean;
 };
 
-type BuilderOptions = {
+export type BuilderOptions = {
   params?: Record<string, unknown>;
   context?: Record<string, unknown>;
   orderable?: Record<string, string>;
@@ -91,7 +91,7 @@ function isImportDirectiveError(parsed: ImportDirective | ImportDirectiveError):
   return "error" in parsed;
 }
 
-class SqlRegistryError extends Error {
+export class SqlRegistryError extends Error {
   details: Record<string, unknown>;
 
   constructor(message: string, details: Record<string, unknown> = {}) {
@@ -101,7 +101,7 @@ class SqlRegistryError extends Error {
   }
 }
 
-class SqlRegistryValidationError extends SqlRegistryError {
+export class SqlRegistryValidationError extends SqlRegistryError {
   errors: string[];
 
   constructor(message: string, errors: string[] = []) {
@@ -123,7 +123,7 @@ function parseParamMeta(value: string): ParamMeta {
   };
 
   if (match[2]) {
-    meta.type = normalizeParamType(match[2]);
+    meta.type = normalizeParamType(match[2]) || undefined;
   }
 
   return meta;
@@ -306,7 +306,7 @@ function getCalleeName(callee: unknown) {
   return null;
 }
 
-function parseImportDirective(line: string): ImportDirective | ImportDirectiveError | null {
+export function parseImportDirective(line: string): ImportDirective | ImportDirectiveError | null {
   const trimmed = line.trim();
 
   if (!trimmed.startsWith("@import ")) {
@@ -334,7 +334,7 @@ function parseImportDirective(line: string): ImportDirective | ImportDirectiveEr
   };
 }
 
-function resolveImports(
+export function resolveImports(
   filePath: string,
   stack: string[] = [],
   namespacePrefix = "",
@@ -410,7 +410,7 @@ function resolveImports(
   });
 }
 
-function parseMarkdownFile(filePath: string): ParseMarkdownResult {
+export function parseMarkdownFile(filePath: string): ParseMarkdownResult {
   const collectedFiles = new Set<string>();
   const src = resolveImports(filePath, [], "", collectedFiles);
   const lines = src.split(/\r?\n/);
@@ -593,12 +593,12 @@ function parseMarkdownFile(filePath: string): ParseMarkdownResult {
   };
 }
 
-function resolveSql(entry: QueryEntry | null | undefined, dialect: string) {
+export function resolveSql(entry: QueryEntry | null | undefined, dialect: string) {
   if (!entry || !entry.sql) return null;
   return entry.sql[dialect] || entry.sql.default || null;
 }
 
-class SqlRegistry {
+export class SqlRegistry {
   strict: boolean;
   dialect: string;
   queries: Record<string, QueryEntry>;
@@ -729,15 +729,4 @@ class SqlRegistry {
   }
 }
 
-module.exports = {
-  SqlRegistry,
-  SqlRegistryError,
-  SqlRegistryValidationError,
-  SqlBuilder,
-  SqlBuilderError,
-  parseMarkdownFile,
-  resolveSql,
-  extractNamedParams,
-  resolveImports,
-  parseImportDirective
-};
+export { SqlBuilder, SqlBuilderError, extractNamedParams };

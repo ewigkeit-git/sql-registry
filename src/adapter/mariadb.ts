@@ -1,4 +1,4 @@
-const { SqlRegistryAdapter } = require("./base");
+import { SqlBuilderLike, SqlRegistryAdapter, SqlRegistryLike } from "./base";
 
 type SqlStatement = {
   sql: string;
@@ -14,17 +14,17 @@ type MariadbOptions = {
   [name: string]: unknown;
 };
 
-class MariadbAdapter extends SqlRegistryAdapter {
+export class MariadbAdapter extends SqlRegistryAdapter {
   connection: MariadbLike | null;
 
   constructor(connectionOrRegistry: unknown, registryOrOptions: unknown = {}, options: MariadbOptions = {}) {
     if (isMariadbLike(connectionOrRegistry)) {
-      super(registryOrOptions, options);
+      super(registryOrOptions as SqlRegistryLike, options);
       this.connection = connectionOrRegistry;
       return;
     }
 
-    super(connectionOrRegistry, registryOrOptions);
+    super(connectionOrRegistry as SqlRegistryLike, registryOrOptions as Record<string, unknown>);
     this.connection = null;
   }
 
@@ -34,7 +34,7 @@ class MariadbAdapter extends SqlRegistryAdapter {
       nameOrOptions,
       maybeOptions
     );
-    return super.query(connection, name, options);
+    return super.query(connection, String(name), options);
   }
 
   async explain(connectionOrName: unknown, nameOrOptions?: unknown, maybeOptions?: MariadbOptions) {
@@ -43,7 +43,7 @@ class MariadbAdapter extends SqlRegistryAdapter {
       nameOrOptions,
       maybeOptions
     );
-    return super.explain(connection, name, options);
+    return super.explain(connection, String(name), options);
   }
 
   async execute(connectionOrBuilder: unknown, builderOrOptions?: unknown, maybeOptions?: MariadbOptions) {
@@ -52,7 +52,7 @@ class MariadbAdapter extends SqlRegistryAdapter {
       builderOrOptions,
       maybeOptions
     );
-    return super.execute(connection, builder, options);
+    return super.execute(connection, builder as SqlBuilderLike, options);
   }
 
   async executeExplain(connectionOrBuilder: unknown, builderOrOptions?: unknown, maybeOptions?: MariadbOptions) {
@@ -61,7 +61,7 @@ class MariadbAdapter extends SqlRegistryAdapter {
       builderOrOptions,
       maybeOptions
     );
-    return super.executeExplain(connection, builder, options);
+    return super.executeExplain(connection, builder as SqlBuilderLike, options);
   }
 
   executeStatement(connection: MariadbLike | null | undefined, stmt: SqlStatement, options: MariadbOptions = {}) {
@@ -133,7 +133,3 @@ function assertMariadb(connection: unknown): asserts connection is MariadbLike {
     throw new Error("mariadb connection or pool with query(sql, values) is required");
   }
 }
-
-module.exports = {
-  MariadbAdapter
-};

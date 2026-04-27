@@ -1,4 +1,4 @@
-const { SqlRegistryAdapter } = require("./base");
+import { SqlBuilderLike, SqlRegistryAdapter, SqlRegistryLike } from "./base";
 
 type SqlStatement = {
   sql: string;
@@ -14,17 +14,17 @@ type SequelizeOptions = {
   [name: string]: unknown;
 };
 
-class SequelizeAdapter extends SqlRegistryAdapter {
+export class SequelizeAdapter extends SqlRegistryAdapter {
   sequelize: SequelizeLike | null;
 
   constructor(sequelizeOrRegistry: unknown, registryOrOptions: unknown = {}, options: SequelizeOptions = {}) {
     if (isSequelizeLike(sequelizeOrRegistry)) {
-      super(registryOrOptions, options);
+      super(registryOrOptions as SqlRegistryLike, options);
       this.sequelize = sequelizeOrRegistry;
       return;
     }
 
-    super(sequelizeOrRegistry, registryOrOptions);
+    super(sequelizeOrRegistry as SqlRegistryLike, registryOrOptions as Record<string, unknown>);
     this.sequelize = null;
   }
 
@@ -34,7 +34,7 @@ class SequelizeAdapter extends SqlRegistryAdapter {
       nameOrOptions,
       maybeOptions
     );
-    return super.query(sequelize, name, options);
+    return super.query(sequelize, String(name), options);
   }
 
   async explain(sequelizeOrName: unknown, nameOrOptions?: unknown, maybeOptions?: SequelizeOptions) {
@@ -43,7 +43,7 @@ class SequelizeAdapter extends SqlRegistryAdapter {
       nameOrOptions,
       maybeOptions
     );
-    return super.explain(sequelize, name, options);
+    return super.explain(sequelize, String(name), options);
   }
 
   async execute(sequelizeOrBuilder: unknown, builderOrOptions?: unknown, maybeOptions?: SequelizeOptions) {
@@ -52,7 +52,7 @@ class SequelizeAdapter extends SqlRegistryAdapter {
       builderOrOptions,
       maybeOptions
     );
-    return super.execute(sequelize, builder, options);
+    return super.execute(sequelize, builder as SqlBuilderLike, options);
   }
 
   async executeExplain(sequelizeOrBuilder: unknown, builderOrOptions?: unknown, maybeOptions?: SequelizeOptions) {
@@ -61,7 +61,7 @@ class SequelizeAdapter extends SqlRegistryAdapter {
       builderOrOptions,
       maybeOptions
     );
-    return super.executeExplain(sequelize, builder, options);
+    return super.executeExplain(sequelize, builder as SqlBuilderLike, options);
   }
 
   executeStatement(sequelize: SequelizeLike | null | undefined, stmt: SqlStatement, options: SequelizeOptions = {}) {
@@ -130,7 +130,3 @@ function assertSequelize(sequelize: unknown): asserts sequelize is SequelizeLike
     throw new Error("sequelize instance with query(sql, options) is required");
   }
 }
-
-module.exports = {
-  SequelizeAdapter
-};

@@ -1,4 +1,10 @@
-function stripQuotedAndCommented(sql: string) {
+export type NamedParamToken = {
+  name: string;
+  start: number;
+  end: number;
+};
+
+export function stripQuotedAndCommented(sql: string) {
   let out = "";
   let i = 0;
 
@@ -94,10 +100,10 @@ function stripQuotedAndCommented(sql: string) {
   return out;
 }
 
-function extractNamedParamTokens(sql: string) {
+export function extractNamedParamTokens(sql: string): NamedParamToken[] {
   const cleaned = stripQuotedAndCommented(sql);
   const regex = /(^|[^:]):([A-Za-z_][A-Za-z0-9_]*)/g;
-  const tokens = [];
+  const tokens: NamedParamToken[] = [];
 
   let match;
   while ((match = regex.exec(cleaned)) !== null) {
@@ -115,8 +121,8 @@ function extractNamedParamTokens(sql: string) {
   return tokens;
 }
 
-function extractNamedParams(sql: string) {
-  const names = new Set();
+export function extractNamedParams(sql: string): string[] {
+  const names = new Set<string>();
 
   for (const token of extractNamedParamTokens(sql)) {
     names.add(token.name);
@@ -124,9 +130,3 @@ function extractNamedParams(sql: string) {
 
   return [...names];
 }
-
-module.exports = {
-  stripQuotedAndCommented,
-  extractNamedParamTokens,
-  extractNamedParams
-};

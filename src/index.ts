@@ -1,27 +1,15 @@
-const {
+export {
   SqlRegistry,
   SqlRegistryError,
   SqlRegistryValidationError,
   SqlBuilder,
   SqlBuilderError
-} = require("./lib/sql-registry");
-const {
-  SqlRegistryAdapter,
-  BetterSqlite3Adapter,
-  MariadbAdapter,
-  NodeSqliteAdapter,
-  SequelizeAdapter
-} = require("./adapter");
+} from "./lib/sql-registry";
 
-module.exports = {
-  SqlRegistry,
-  SqlRegistryError,
-  SqlRegistryValidationError,
-  SqlBuilder,
-  SqlBuilderError,
+export {
   SqlRegistryAdapter,
   BetterSqlite3Adapter,
   MariadbAdapter,
   NodeSqliteAdapter,
   SequelizeAdapter
-};
+} from "./adapter";

@@ -1,11 +1,11 @@
 const acorn = require("acorn");
-const { bindSql } = require("./binder");
-const { extractNamedParams } = require("./param-parser");
-const { buildExplain: buildExplainStmt } = require("./explain-builder");
-const { validateParamTypes } = require("./param-types");
-const { transpileBuilderScript } = require("./builder-script");
+import { bindSql } from "./binder";
+import { extractNamedParams } from "./param-parser";
+import { buildExplain as buildExplainStmt } from "./explain-builder";
+import { validateParamTypes } from "./param-types";
+import { transpileBuilderScript } from "./builder-script";
 
-class SqlBuilderError extends Error {
+export class SqlBuilderError extends Error {
   details: Record<string, unknown>;
 
   constructor(message: string, details: Record<string, unknown> = {}) {
@@ -41,7 +41,7 @@ type SqlRegistryLike = {
   getSql: (queryName: string) => string;
 };
 
-type SqlBuilderOptions = {
+export type SqlBuilderOptions = {
   dialect?: string;
   orderable?: Record<string, string>;
   maxLimit?: number;
@@ -49,11 +49,11 @@ type SqlBuilderOptions = {
   paramTypes?: Record<string, string>;
 };
 
-type BindOptions = {
+export type BindOptions = {
   strict?: boolean;
 };
 
-type ExplainOptions = BindOptions & {
+export type ExplainOptions = BindOptions & {
   dialect?: string;
   analyze?: boolean;
 };
@@ -570,7 +570,7 @@ function executeAst(ast: AstNode, env: EvalEnv): void {
   }
 }
 
-class SqlBuilder {
+export class SqlBuilder {
   registry: SqlRegistryLike | null;
   queryName: string;
   baseSql: string;
@@ -844,8 +844,3 @@ class SqlBuilder {
     });
   }
 }
-
-module.exports = {
-  SqlBuilder,
-  SqlBuilderError
-};

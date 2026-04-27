@@ -1,6 +1,6 @@
 const ts = require("typescript");
 
-function transpileBuilderScript(code: string) {
+export function transpileBuilderScript(code: string) {
   if (!code || !code.trim()) return code;
 
   return ts.transpileModule(code, {
@@ -11,7 +11,3 @@ function transpileBuilderScript(code: string) {
     }
   }).outputText;
 }
-
-module.exports = {
-  transpileBuilderScript
-};

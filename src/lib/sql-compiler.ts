@@ -1,10 +1,10 @@
-type NamedParamToken = {
+export type NamedParamToken = {
   name: string;
   start: number;
   end: number;
 };
 
-function compileSql(sql: string, tokens: NamedParamToken[], params: Record<string, unknown> = {}) {
+export function compileSql(sql: string, tokens: NamedParamToken[], params: Record<string, unknown> = {}) {
   const values: unknown[] = [];
   const parts: string[] = [];
   let lastIndex = 0;
@@ -23,7 +23,3 @@ function compileSql(sql: string, tokens: NamedParamToken[], params: Record<strin
     values
   };
 }
-
-module.exports = {
-  compileSql
-};

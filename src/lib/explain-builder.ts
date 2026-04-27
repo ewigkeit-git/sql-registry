@@ -1,4 +1,4 @@
-const { DIALECT, normalizeDialect } = require("./dialect");
+import { DIALECT, normalizeDialect } from "./dialect";
 
 type SqlStatement = {
   sql: string;
@@ -10,7 +10,7 @@ type ExplainOptions = {
   analyze?: boolean;
 };
 
-function buildExplain(stmt: SqlStatement, options: ExplainOptions = {}) {
+export function buildExplain(stmt: SqlStatement, options: ExplainOptions = {}): { sql: string; values: unknown[] } {
   const {
     dialect = "sqlite",
     analyze = false
@@ -47,7 +47,3 @@ function buildExplain(stmt: SqlStatement, options: ExplainOptions = {}) {
     values: stmt.values || []
   };
 }
-
-module.exports = {
-  buildExplain
-};
