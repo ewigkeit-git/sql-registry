@@ -47,25 +47,32 @@ export function normalizeParamType(type: string) {
   return normalized;
 }
 
-function isPlainJsonValue(value: unknown): boolean {
-  if (value == null) return true;
+function isPlainJsonValue(value: unknown, seen = new Set<object>()): boolean {
+  if (value === undefined) return false;
+  if (value === null) return true;
 
   const valueType = typeof value;
   if (["string", "number", "boolean"].includes(valueType)) return true;
 
   if (Array.isArray(value)) {
-    return value.every(isPlainJsonValue);
+    if (seen.has(value)) return false;
+    seen.add(value);
+    return value.every(item => isPlainJsonValue(item, seen));
   }
 
   if (valueType === "object") {
-    return Object.values(value).every(isPlainJsonValue);
+    const objectValue = value as Record<string, unknown>;
+    if (seen.has(objectValue)) return false;
+    seen.add(objectValue);
+    return Object.values(objectValue).every(item => isPlainJsonValue(item, seen));
   }
 
   return false;
 }
 
 function isValueOfType(value: unknown, type: string) {
-  if (value == null || !type || type === PARAM_TYPES.ANY) return true;
+  if (value === undefined) return false;
+  if (value === null || !type || type === PARAM_TYPES.ANY) return true;
 
   switch (type) {
     case PARAM_TYPES.STRING:

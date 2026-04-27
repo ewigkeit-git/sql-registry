@@ -15,9 +15,10 @@ const {
 } = require("../index");
 const { SqlBuilder, SqlBuilderError } = require("../dist/lib/builder");
 const { buildExplain } = require("../dist/lib/explain-builder");
-const { normalizeParamType } = require("../dist/lib/param-types");
 const { test, run } = require("./harness");
 require("./param-parser.test");
+require("./param-types.normal.test");
+require("./param-types.error.test");
 
 function getNodeSqliteDatabaseSync() {
   try {
@@ -1021,142 +1022,6 @@ test("SqlRegistry normalizes SQL fence dialect aliases", async () => {
     sql: "SELECT * FROM users WHERE id = ?",
     values: [1]
   });
-});
-
-test("SqlRegistry parses typed params", async () => {
-  const fixtureDir = path.join(__dirname, ".tmp");
-  fs.mkdirSync(fixtureDir, { recursive: true });
-
-  const fixturePath = path.join(fixtureDir, "registry-typed-params.md");
-  fs.writeFileSync(
-    fixturePath,
-    [
-      "## users.findTyped",
-      "param: id:int - User ID",
-      "param: active:bool - Active flag",
-      "",
-      "```sql",
-      "SELECT * FROM users WHERE id = :id AND active = :active",
-      "```",
-      ""
-    ].join("\n"),
-    "utf8"
-  );
-
-  const registry = new SqlRegistry();
-  registry.loadFile(fixturePath);
-
-  assert.deepStrictEqual(registry.getMeta("users.findTyped").params, [
-    {
-      name: "id",
-      description: "User ID",
-      type: "integer"
-    },
-    {
-      name: "active",
-      description: "Active flag",
-      type: "boolean"
-    }
-  ]);
-});
-
-test("param type aliases normalize datetime and timestamp to date", async () => {
-  assert.strictEqual(normalizeParamType("datetime"), "date");
-  assert.strictEqual(normalizeParamType("timestamp"), "date");
-});
-
-test("timestamp params accept database datetime strings", async () => {
-  const registry = new SqlRegistry({ strict: false });
-  registry.queries["events.findAfter"] = {
-    meta: {
-      params: [
-        {
-          name: "createdAt",
-          type: "date",
-          description: "Created timestamp"
-        }
-      ]
-    },
-    sql: {
-      default: "SELECT * FROM events WHERE created_at >= :createdAt"
-    }
-  };
-
-  assert.deepStrictEqual(
-    registry.bind("events.findAfter", { createdAt: "2026-04-27 12:34:56.789" }),
-    {
-      sql: "SELECT * FROM events WHERE created_at >= ?",
-      values: ["2026-04-27 12:34:56.789"]
-    }
-  );
-});
-
-test("SqlRegistry validates typed params on bind", async () => {
-  const registry = new SqlRegistry({ strict: false });
-  registry.queries["users.findTyped"] = {
-    meta: {
-      params: [
-        {
-          name: "id",
-          type: "integer",
-          description: "User ID"
-        }
-      ]
-    },
-    sql: {
-      default: "SELECT * FROM users WHERE id = :id"
-    }
-  };
-
-  assert.throws(
-    () => registry.bind("users.findTyped", { id: "1" }),
-    /invalid type for param: id/
-  );
-
-  assert.deepStrictEqual(registry.bind("users.findTyped", { id: 1 }), {
-    sql: "SELECT * FROM users WHERE id = ?",
-    values: [1]
-  });
-});
-
-test("SqlBuilder validates typed params from builder fragments", async () => {
-  const registry = new SqlRegistry({ strict: false });
-  registry.queries["users.searchTyped"] = {
-    meta: {
-      params: [
-        {
-          name: "limit",
-          type: "integer",
-          description: "Limit"
-        }
-      ],
-      builder: "append('paging', 'LIMIT :limit', { limit: params.limit });"
-    },
-    sql: {
-      default: "SELECT * FROM users /*#paging*/"
-    }
-  };
-
-  assert.throws(
-    () => registry.builder("users.searchTyped", {
-      params: {
-        limit: "10"
-      }
-    }),
-    /invalid type for param: limit/
-  );
-
-  assert.deepStrictEqual(
-    registry.builder("users.searchTyped", {
-      params: {
-        limit: 10
-      }
-    }).build(),
-    {
-      sql: "SELECT * FROM users LIMIT ?",
-      values: [10]
-    }
-  );
 });
 
 test("SqlRegistry supports TypeScript builder blocks", async () => {
