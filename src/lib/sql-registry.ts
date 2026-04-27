@@ -54,6 +54,7 @@ export type SqlRegistryOptions = {
 
 export type BindOptions = {
   strict?: boolean;
+  dialect?: string;
 };
 
 export type BuilderOptions = {
@@ -167,14 +168,44 @@ function validateEntry(name: string, entry: QueryEntry) {
 
   const paramDefs = Array.isArray(entry.meta.params) ? entry.meta.params : [];
   const paramNames = paramDefs.map((p: ParamMeta) => p.name);
+  const paramDefByName = new Map(paramDefs.map((p: ParamMeta) => [p.name, p]));
   const builderMeta = extractBuilderScriptMeta(entry.meta.builder || "");
-  const declaredParamNames = [...new Set([...paramNames, ...builderMeta.inputParams])];
+  const declaredParamNames = [...new Set(paramNames)];
   const builderInputParamNames = new Set(builderMeta.inputParams);
   const dynamicallyBoundParamNames = new Set(builderMeta.boundParams);
+  const internallyGeneratedParamNames = new Set(builderMeta.internalParams);
 
   const dupParams = findDuplicates(paramNames);
   if (dupParams.length > 0) {
     errors.push(`[${name}] duplicate params in meta: ${dupParams.join(", ")}`);
+  }
+
+  const undeclaredInputParams = builderMeta.inputParams.filter((p: string) => !paramNames.includes(p));
+  if (undeclaredInputParams.length > 0) {
+    errors.push(`[${name}] params read in builder but not declared in meta: ${undeclaredInputParams.join(", ")}`);
+  }
+
+  const undeclaredBoundParams = builderMeta.boundParams.filter(
+    (p: string) => !internallyGeneratedParamNames.has(p) && !paramNames.includes(p)
+  );
+  if (undeclaredBoundParams.length > 0) {
+    errors.push(`[${name}] params bound in builder but not declared in meta: ${undeclaredBoundParams.join(", ")}`);
+  }
+
+  const inputParamsWithoutType = builderMeta.inputParams.filter((p: string) => {
+    const def = paramDefByName.get(p);
+    return def && !def.type;
+  });
+  if (inputParamsWithoutType.length > 0) {
+    errors.push(`[${name}] params read in builder must declare a type: ${inputParamsWithoutType.join(", ")}`);
+  }
+
+  const inputParamsWithoutDescription = builderMeta.inputParams.filter((p: string) => {
+    const def = paramDefByName.get(p);
+    return def && !def.description;
+  });
+  if (inputParamsWithoutDescription.length > 0) {
+    errors.push(`[${name}] params read in builder must declare a description: ${inputParamsWithoutDescription.join(", ")}`);
   }
 
   for (const [dialect, sqlValue] of Object.entries(entry.sql)) {
@@ -190,7 +221,7 @@ function validateEntry(name: string, entry: QueryEntry) {
         !dynamicallyBoundParamNames.has(p) &&
         !builderInputParamNames.has(p)
     );
-    const sqlOnly = sqlParams.filter((p: string) => !declaredParamNames.includes(p));
+    const sqlOnly = sqlParams.filter((p: string) => !declaredParamNames.includes(p) && !internallyGeneratedParamNames.has(p));
 
     if (metaOnly.length > 0) {
       errors.push(
@@ -211,11 +242,13 @@ function validateEntry(name: string, entry: QueryEntry) {
 function extractBuilderScriptMeta(code: string) {
   const inputParams = new Set<string>();
   const boundParams = new Set<string>();
+  const internalParams = new Set<string>();
 
   if (!code || !code.trim()) {
     return {
       inputParams: [],
-      boundParams: []
+      boundParams: [],
+      internalParams: []
     };
   }
 
@@ -228,7 +261,8 @@ function extractBuilderScriptMeta(code: string) {
   } catch {
     return {
       inputParams: [],
-      boundParams: []
+      boundParams: [],
+      internalParams: []
     };
   }
 
@@ -257,7 +291,9 @@ function extractBuilderScriptMeta(code: string) {
         ? 0
         : calleeName !== null && ["append", "appendQuery"].includes(calleeName)
           ? 2
-          : -1;
+          : calleeName === "set"
+            ? 1
+            : -1;
 
       if (objectArgIndex >= 0) {
         const objectArg = astArray(astNode.arguments)[objectArgIndex];
@@ -271,8 +307,10 @@ function extractBuilderScriptMeta(code: string) {
               const key = asAstNode(property.key);
               if (key?.type === "Identifier") {
                 boundParams.add(String(key.name));
+                if (calleeName === "param") internalParams.add(String(key.name));
               } else if (key?.type === "Literal") {
                 boundParams.add(String(key.value));
+                if (calleeName === "param") internalParams.add(String(key.value));
               }
             }
           }
@@ -291,7 +329,8 @@ function extractBuilderScriptMeta(code: string) {
 
   return {
     inputParams: [...inputParams],
-    boundParams: [...boundParams]
+    boundParams: [...boundParams],
+    internalParams: [...internalParams]
   };
 }
 
@@ -678,7 +717,10 @@ export class SqlRegistry {
     const entry = this.get(name);
     validateParamTypes(params, buildParamTypeMap(entry.meta.params));
     const sql = this.getSql(name);
-    return bindSql(sql, params, options);
+    return bindSql(sql, params, {
+      dialect: this.dialect,
+      ...options
+    });
   }
 
   builder(name: string, options: BuilderOptions = {}) {

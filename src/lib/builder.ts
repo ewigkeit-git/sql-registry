@@ -52,6 +52,7 @@ export type SqlBuilderOptions = {
 
 export type BindOptions = {
   strict?: boolean;
+  dialect?: string;
 };
 
 export type ExplainOptions = BindOptions & {
@@ -123,7 +124,7 @@ function isLoopStatement(node: AstNode | null) {
   ].includes(node.type);
 }
 
-function validateControlFlowDepth(node: unknown, state = { ifDepth: 0, loopDepth: 0 }): void {
+function validateControlFlowDepth(node: unknown, state = { ifDepth: 0 }): void {
   const astNode = asAstNode(node);
   if (!node || typeof node !== "object") return;
 
@@ -135,8 +136,7 @@ function validateControlFlowDepth(node: unknown, state = { ifDepth: 0, loopDepth
   }
 
   const nextState = {
-    ifDepth: state.ifDepth,
-    loopDepth: state.loopDepth
+    ifDepth: state.ifDepth
   };
 
   if (astNode?.type === "IfStatement") {
@@ -147,10 +147,7 @@ function validateControlFlowDepth(node: unknown, state = { ifDepth: 0, loopDepth
   }
 
   if (isLoopStatement(astNode)) {
-    nextState.loopDepth += 1;
-    if (nextState.loopDepth > 2) {
-      throw new SqlBuilderError("loop nesting exceeds the allowed depth");
-    }
+    throw new SqlBuilderError("loop statements are not allowed");
   }
 
   for (const value of Object.values(node)) {
@@ -288,6 +285,14 @@ function normalizeNonNegativeInteger(name: string, value: unknown, max: number) 
   }
 
   return numberValue;
+}
+
+function encodeParamNamePart(value: string) {
+  return value.replace(/[^A-Za-z0-9_]/g, char => `_x${char.charCodeAt(0).toString(16)}_`);
+}
+
+function pagingParamName(name: "limit" | "offset", slotName: string) {
+  return `${name}_${encodeParamNamePart(slotName)}`;
 }
 
 function toNumber(value: unknown): number {
@@ -737,13 +742,15 @@ export class SqlBuilder {
   limit(slotName: string, value: unknown) {
     if (value == null) return this;
     const limit = normalizeNonNegativeInteger("limit", value, this.maxLimit);
-    return this.appendTo(slotName, "LIMIT :limit", { limit });
+    const paramName = pagingParamName("limit", slotName);
+    return this.appendTo(slotName, `LIMIT :${paramName}`, { [paramName]: limit });
   }
 
   offset(slotName: string, value: unknown) {
     if (value == null) return this;
     const offset = normalizeNonNegativeInteger("offset", value, this.maxOffset);
-    return this.appendTo(slotName, "OFFSET :offset", { offset });
+    const paramName = pagingParamName("offset", slotName);
+    return this.appendTo(slotName, `OFFSET :${paramName}`, { [paramName]: offset });
   }
 
   renderSql() {
@@ -850,7 +857,10 @@ export class SqlBuilder {
 
   build(options: BindOptions = {}) {
     const sql = this.renderSql();
-    return bindSql(sql, this.params, options);
+    return bindSql(sql, this.params, {
+      dialect: this.dialect,
+      ...options
+    });
   }
 
   buildExplain(options: ExplainOptions = {}) {

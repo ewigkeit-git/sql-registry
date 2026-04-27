@@ -99,6 +99,19 @@ test("compileSql owns placeholder conversion and value ordering", async () => {
   });
 });
 
+test("compileSql supports numbered placeholders", async () => {
+  const sql = "select :id as id, :role as role, :id as again";
+  const tokens = extractNamedParamTokens(sql);
+
+  assert.deepStrictEqual(
+    compileSql(sql, tokens, { id: 7, role: "admin" }, { placeholder: "numbered" }),
+    {
+      sql: "select $1 as id, $2 as role, $3 as again",
+      values: [7, "admin", 7]
+    }
+  );
+});
+
 test("buildExplain accepts pg dialect", async () => {
   const stmt = buildExplain(
     { sql: "select 1", values: [] },
@@ -568,6 +581,50 @@ test("SqlBuilder validates and coerces limit and offset", async () => {
   );
 });
 
+test("SqlBuilder limit and offset params are scoped by slot", async () => {
+  const builder = new SqlBuilder(
+    null,
+    "users.search",
+    [
+      "SELECT * FROM (SELECT * FROM users /*#users.page*/) u",
+      "JOIN (SELECT * FROM logs /*#logs-page*/) l ON l.user_id = u.id"
+    ].join("\n")
+  );
+
+  builder
+    .limit("users.page", 10)
+    .limit("logs-page", 20)
+    .offset("users.page", 30)
+    .offset("logs-page", 40);
+
+  assert.deepStrictEqual(builder.build(), {
+    sql: [
+      "SELECT * FROM (SELECT * FROM users LIMIT ?",
+      "OFFSET ?) u",
+      "JOIN (SELECT * FROM logs LIMIT ?",
+      "OFFSET ?) l ON l.user_id = u.id"
+    ].join("\n"),
+    values: [10, 30, 20, 40]
+  });
+});
+
+test("SqlBuilder limit helper does not collide with user limit params", async () => {
+  const builder = new SqlBuilder(
+    null,
+    "users.search",
+    "SELECT * FROM users WHERE score <= :limit /*#paging*/"
+  );
+
+  builder
+    .addParams({ limit: 99 })
+    .limit("paging", 10);
+
+  assert.deepStrictEqual(builder.build(), {
+    sql: "SELECT * FROM users WHERE score <= ? LIMIT ?",
+    values: [99, 10]
+  });
+});
+
 test("SqlBuilder set joins fragments with commas", async () => {
   const builder = new SqlBuilder(
     null,
@@ -638,6 +695,29 @@ test("runBuilderScript rejects deeply nested if", async () => {
   );
 });
 
+test("runBuilderScript rejects loop statements", async () => {
+  const builder = new SqlBuilder(
+    null,
+    "users.search",
+    "SELECT * FROM users /*#where*/"
+  );
+
+  for (const code of [
+    "for (let i = 0; i < 1; i++) { append('where', 'AND active = 1'); }",
+    "while (params.active) { append('where', 'AND active = 1'); }",
+    "do { append('where', 'AND active = 1'); } while (params.active);"
+  ]) {
+    assert.throws(
+      () => builder.runBuilderScript(code, { params: { active: true } }),
+      error => {
+        assert.ok(error instanceof SqlBuilderError);
+        assert.match(error.message, /loop statements are not allowed/);
+        return true;
+      }
+    );
+  }
+});
+
 test("SqlRegistry.builder creates a builder for the named query", async () => {
   const registry = new SqlRegistry({ strict: false, dialect: "sqlite" });
 
@@ -682,7 +762,7 @@ test("SqlBuilder.buildExplain explains the built SQL", async () => {
   builder.append("where", "WHERE id = :id", { id: 1 });
 
   assert.deepStrictEqual(builder.buildExplain({ analyze: true }), {
-    sql: "EXPLAIN ANALYZE SELECT * FROM users WHERE id = ?",
+    sql: "EXPLAIN ANALYZE SELECT * FROM users WHERE id = $1",
     values: [1]
   });
 });
@@ -707,13 +787,13 @@ test("SqlRegistry loads builder and orderable metadata from markdown", async () 
       "## user.searchWithLatestOrder",
       "",
       "description: User search",
-      "param: name - User name",
-      "param: status - Status",
-      "param: tenantId - Tenant ID",
-      "param: sort - Sort key",
-      "param: limit - Limit",
-      "param: offset - Offset",
-      "param: asc - Asc flag",
+      "param: name:string - User name",
+      "param: status:string - Status",
+      "param: tenantId:int - Tenant ID",
+      "param: sort:string - Sort key",
+      "param: limit:int - Limit",
+      "param: offset:int - Offset",
+      "param: asc:bool - Asc flag",
       "",
       "orderable:",
       "  createdAt: u.created_at",
@@ -879,12 +959,12 @@ test("SqlRegistry loads image query markdown used by another app", async () => {
       "- description: <br>",
       "Gets screenshot rows for the list screen.<br>",
       "",
-      "- param: state - Processing state",
-      "- param: subject - Subject name",
-      "- param: shotAtFrom - Shot date lower bound",
-      "- param: shotAtTo - Shot date upper bound",
-      "- param: limitNum - Limit",
-      "- param: offsetNum - Offset",
+      "- param: state:string - Processing state",
+      "- param: subject:string - Subject name",
+      "- param: shotAtFrom:date - Shot date lower bound",
+      "- param: shotAtTo:date - Shot date upper bound",
+      "- param: limitNum:int - Limit",
+      "- param: offsetNum:int - Offset",
       "```sql",
       "SELECT",
       "  i.id,",
@@ -938,9 +1018,11 @@ test("SqlRegistry loads image query markdown used by another app", async () => {
       "- description: <br>",
       "Updates only requested screenshot columns.<br>",
       "",
-      "- param: id - Screenshot ID",
-      "- param: state - New processing state",
-      "- param: primarySubject - New primary subject ID",
+      "- param: id:string - Screenshot ID",
+      "- param: hasState:bool - Whether to update state",
+      "- param: state:string - New processing state",
+      "- param: hasPrimarySubject:bool - Whether to update primary subject",
+      "- param: primarySubject:any - New primary subject ID",
       "```sql",
       "UPDATE images",
       "SET",
@@ -1081,7 +1163,7 @@ test("SqlRegistry normalizes SQL fence dialect aliases", async () => {
   registry.loadFile(fixturePath);
 
   assert.deepStrictEqual(registry.bind("users.pgOnly", { id: 1 }), {
-    sql: "SELECT * FROM users WHERE id = ?",
+    sql: "SELECT * FROM users WHERE id = $1",
     values: [1]
   });
 });
@@ -1284,7 +1366,18 @@ test("SqlRegistryAdapter queries by SQL ID", async () => {
   const registry = new SqlRegistry({ strict: false });
   registry.queries["users.search"] = {
     meta: {
-      params: [],
+      params: [
+        {
+          name: "sort",
+          type: "string",
+          description: "Sort key"
+        },
+        {
+          name: "asc",
+          type: "boolean",
+          description: "Sort direction"
+        }
+      ],
       orderable: {
         createdAt: "users.created_at"
       },
@@ -1367,7 +1460,7 @@ test("SqlRegistryAdapter can explain by SQL ID", async () => {
   });
 
   assert.deepStrictEqual(result, {
-    sql: "EXPLAIN ANALYZE SELECT * FROM users WHERE id = ?",
+    sql: "EXPLAIN ANALYZE SELECT * FROM users WHERE id = $1",
     values: [1]
   });
 });

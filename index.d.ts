@@ -45,6 +45,7 @@ export type SqlRegistryOptions = {
 
 export type BindOptions = {
   strict?: boolean;
+  dialect?: SqlRegistryOptions["dialect"];
 };
 
 export type BuilderOptions = {

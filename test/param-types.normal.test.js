@@ -118,3 +118,34 @@ test("json params accept invalid JSON strings as database values", async () => {
 
   assert.deepStrictEqual(registry.bind("test", { payload: "{" }).values, ["{"]);
 });
+
+test("builder internal params can be generated with param helper", async () => {
+  const fixtureDir = path.join(__dirname, ".tmp");
+  fs.mkdirSync(fixtureDir, { recursive: true });
+
+  const fixturePath = path.join(fixtureDir, "registry-builder-internal-param.md");
+  fs.writeFileSync(
+    fixturePath,
+    [
+      "## users.generatedLimit",
+      "",
+      "```sql",
+      "SELECT * FROM users LIMIT :generatedLimit",
+      "```",
+      "",
+      "```js builder",
+      "param({ generatedLimit: 10 });",
+      "```",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+
+  const registry = new SqlRegistry();
+  registry.loadFile(fixturePath);
+
+  assert.deepStrictEqual(registry.builder("users.generatedLimit").build(), {
+    sql: "SELECT * FROM users LIMIT ?",
+    values: [10]
+  });
+});

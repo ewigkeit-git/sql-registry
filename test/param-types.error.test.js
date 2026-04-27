@@ -92,6 +92,146 @@ test("SqlRegistry rejects malformed empty param type syntax", async () => {
   );
 });
 
+test("SqlRegistry rejects builder params reads without param metadata", async () => {
+  const fixtureDir = path.join(__dirname, ".tmp");
+  fs.mkdirSync(fixtureDir, { recursive: true });
+
+  const fixturePath = path.join(fixtureDir, "registry-builder-undeclared-input.md");
+  fs.writeFileSync(
+    fixturePath,
+    [
+      "## users.search",
+      "",
+      "```sql",
+      "SELECT * FROM users /*#where*/",
+      "```",
+      "",
+      "```js builder",
+      "if (params.name) {",
+      "  append('where', 'AND name = :name', { name: params.name });",
+      "}",
+      "```",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+
+  const registry = new SqlRegistry();
+
+  assert.throws(
+    () => registry.loadFile(fixturePath),
+    error => {
+      assert.match(error.errors.join("\n"), /params read in builder but not declared in meta: name/);
+      return true;
+    }
+  );
+});
+
+test("SqlRegistry rejects builder params reads without type metadata", async () => {
+  const fixtureDir = path.join(__dirname, ".tmp");
+  fs.mkdirSync(fixtureDir, { recursive: true });
+
+  const fixturePath = path.join(fixtureDir, "registry-builder-input-without-type.md");
+  fs.writeFileSync(
+    fixturePath,
+    [
+      "## users.search",
+      "param: name - User name",
+      "",
+      "```sql",
+      "SELECT * FROM users /*#where*/",
+      "```",
+      "",
+      "```js builder",
+      "if (params.name) {",
+      "  append('where', 'AND name = :name', { name: params.name });",
+      "}",
+      "```",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+
+  const registry = new SqlRegistry();
+
+  assert.throws(
+    () => registry.loadFile(fixturePath),
+    error => {
+      assert.match(error.errors.join("\n"), /params read in builder must declare a type: name/);
+      return true;
+    }
+  );
+});
+
+test("SqlRegistry rejects builder params reads without description metadata", async () => {
+  const fixtureDir = path.join(__dirname, ".tmp");
+  fs.mkdirSync(fixtureDir, { recursive: true });
+
+  const fixturePath = path.join(fixtureDir, "registry-builder-input-without-description.md");
+  fs.writeFileSync(
+    fixturePath,
+    [
+      "## users.search",
+      "param: name:string",
+      "",
+      "```sql",
+      "SELECT * FROM users /*#where*/",
+      "```",
+      "",
+      "```js builder",
+      "if (params.name) {",
+      "  append('where', 'AND name = :name', { name: params.name });",
+      "}",
+      "```",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+
+  const registry = new SqlRegistry();
+
+  assert.throws(
+    () => registry.loadFile(fixturePath),
+    error => {
+      assert.match(error.errors.join("\n"), /params read in builder must declare a description: name/);
+      return true;
+    }
+  );
+});
+
+test("SqlRegistry rejects builder bound params unless declared or internally generated", async () => {
+  const fixtureDir = path.join(__dirname, ".tmp");
+  fs.mkdirSync(fixtureDir, { recursive: true });
+
+  const fixturePath = path.join(fixtureDir, "registry-builder-undeclared-bound.md");
+  fs.writeFileSync(
+    fixturePath,
+    [
+      "## users.search",
+      "",
+      "```sql",
+      "SELECT * FROM users /*#where*/",
+      "```",
+      "",
+      "```js builder",
+      "append('where', 'AND active = :active', { active: true });",
+      "```",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+
+  const registry = new SqlRegistry();
+
+  assert.throws(
+    () => registry.loadFile(fixturePath),
+    error => {
+      assert.match(error.errors.join("\n"), /params bound in builder but not declared in meta: active/);
+      return true;
+    }
+  );
+});
+
 test("param type aliases are case-insensitive", async () => {
   assert.strictEqual(normalizeParamType("TIMESTAMP"), "date");
   assert.strictEqual(normalizeParamType("DateTime"), "date");
