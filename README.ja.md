@@ -569,9 +569,7 @@ console.log(stmt);
 SQL は Markdown の `##` 見出しごとに定義します。
 
 ````md
-## users.findById
-
-description: Find one user by ID.
+## users.findById - Find one user by ID.
 
 param: id:int - User ID
 

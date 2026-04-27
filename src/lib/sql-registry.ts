@@ -12,6 +12,8 @@ import {
   validateParamTypes
 } from "./param-types";
 
+const QUERY_ID_PATTERN = /^[A-Za-z0-9_.-]+$/;
+
 export type ParamMeta = {
   name: string;
   description: string;
@@ -164,6 +166,31 @@ function findDuplicates(arr: string[]) {
   return [...dup];
 }
 
+function isValidQueryId(name: string) {
+  return QUERY_ID_PATTERN.test(name);
+}
+
+function parseQueryHeading(value: string) {
+  const trimmed = String(value || "").trim();
+  const match = trimmed.match(/^([A-Za-z0-9_.-]+)(?:\s+-\s+(.+))?$/);
+
+  if (!match) {
+    return {
+      name: trimmed,
+      description: ""
+    };
+  }
+
+  return {
+    name: match[1],
+    description: match[2] ? match[2].trim() : ""
+  };
+}
+
+function formatQueryHeading(name: string, description = "") {
+  return description ? `${name} - ${description}` : name;
+}
+
 function validateEntry(name: string, entry: QueryEntry) {
   const errors: string[] = [];
 
@@ -254,7 +281,14 @@ function validateQueryReferences(filePath: string, queries: Record<string, Query
 
   for (const [name, entry] of Object.entries(queries)) {
     const builderMeta = extractBuilderScriptMeta(entry.meta.builder || "");
-    const missing = builderMeta.queryRefs.filter((queryName: string) => !queryNames.includes(queryName));
+    const invalid = builderMeta.queryRefs.filter((queryName: string) => !isValidQueryId(queryName));
+    const missing = builderMeta.queryRefs.filter(
+      (queryName: string) => isValidQueryId(queryName) && !queryNames.includes(queryName)
+    );
+
+    if (invalid.length > 0) {
+      errors.push(`${filePath}: [${name}] structure error: appendQuery references invalid query id: ${invalid.join(", ")}`);
+    }
 
     if (missing.length > 0) {
       errors.push(`${filePath}: [${name}] structure error: appendQuery references unknown query: ${missing.join(", ")}`);
@@ -397,7 +431,7 @@ export function parseImportDirective(line: string): ImportDirective | ImportDire
   // @import "./child.md" - 説明
   // @import "./child.md" as user - 説明
   const match = trimmed.match(
-    /^@import\s+"([^"]+)"(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?(?:\s+-\s+(.+))?$/
+    /^@import\s+"([^"]+)"(?:\s+as\s+([A-Za-z0-9_.-]+))?(?:\s+-\s+(.+))?$/
   );
 
   if (!match) {
@@ -488,9 +522,9 @@ export function resolveImports(
   }
 
   return joined.replace(/^##\s+(.+)$/gm, (_, name) => {
-    const trimmedName = String(name).trim();
-    if (!trimmedName) return `## ${trimmedName}`;
-    return `## ${namespacePrefix}.${trimmedName}`;
+    const heading = parseQueryHeading(String(name));
+    if (!heading.name) return `## ${heading.name}`;
+    return `## ${formatQueryHeading(`${namespacePrefix}.${heading.name}`, heading.description)}`;
   });
 }
 
@@ -505,6 +539,7 @@ export function parseMarkdownFile(filePath: string): ParseMarkdownResult {
   let currentMeta: Partial<QueryMeta> = {};
   let currentParams: ParamMeta[] = [];
   let currentSql: Record<string, string> = {};
+  let currentDescriptionFromHeading = false;
 
   function flush() {
     if (!currentName) return;
@@ -532,13 +567,17 @@ export function parseMarkdownFile(filePath: string): ParseMarkdownResult {
 
     if (headingMatch) {
       flush();
-      currentName = headingMatch[1].trim();
-      currentMeta = {};
+      const heading = parseQueryHeading(headingMatch[1]);
+      currentName = heading.name;
+      currentMeta = heading.description ? { description: heading.description } : {};
+      currentDescriptionFromHeading = Boolean(heading.description);
       currentParams = [];
       currentSql = {};
 
       if (!currentName) {
         errors.push(`${filePath}: empty query name`);
+      } else if (!isValidQueryId(currentName)) {
+        errors.push(`${filePath}: [${currentName}] structure error: invalid query id: ${currentName}`);
       }
 
       continue;
@@ -645,10 +684,11 @@ export function parseMarkdownFile(filePath: string): ParseMarkdownResult {
     }
 
     if (key === "description") {
-      if ("description" in currentMeta) {
+      if ("description" in currentMeta && !currentDescriptionFromHeading) {
         errors.push(`${filePath}: [${currentName}] duplicate meta key: description`);
       } else {
         currentMeta.description = value;
+        currentDescriptionFromHeading = false;
       }
       continue;
     }
