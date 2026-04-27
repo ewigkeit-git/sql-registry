@@ -113,7 +113,11 @@ export function buildParamTypeMap(paramDefs: ParamDef[] = []) {
   return out;
 }
 
-export function validateParamTypes(params: Record<string, unknown> = {}, paramTypes: Record<string, string> = {}) {
+export function validateParamTypes(
+  params: Record<string, unknown> = {},
+  paramTypes: Record<string, string> = {},
+  details: Record<string, unknown> = {}
+) {
   for (const [name, type] of Object.entries(paramTypes)) {
     if (!(name in params)) continue;
 
@@ -121,6 +125,7 @@ export function validateParamTypes(params: Record<string, unknown> = {}, paramTy
     if (!isValueOfType(value, type)) {
       throw new SqlParamTypeError(`input error: invalid type for param: ${name}`, {
         category: "input",
+        ...details,
         paramName: name,
         expected: type,
         actual: Array.isArray(value) ? "array" : typeof value

@@ -731,7 +731,9 @@ export class SqlBuilder {
   }
 
   addParams(params: Record<string, unknown> = {}) {
-    validateParamTypes(params, this.paramTypes);
+    validateParamTypes(params, this.paramTypes, {
+      queryName: this.queryName
+    });
 
     for (const [key, value] of Object.entries(params)) {
       if (key in this.params && this.params[key] !== value) {
@@ -889,6 +891,7 @@ export class SqlBuilder {
     const sql = this.renderSql();
     return bindSql(sql, this.params, {
       dialect: this.dialect,
+      queryName: this.queryName,
       ...options
     });
   }

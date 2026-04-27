@@ -33,6 +33,14 @@ export type QueryEntry = {
   sql: Record<string, string>;
 };
 
+type QuerySourceInfo = {
+  filePath: string;
+  queryLine: number;
+  sqlLines: Record<string, number>;
+  builderLine?: number;
+  paramLines: Record<string, number>;
+};
+
 export type ParseMarkdownResult = {
   queries: Record<string, QueryEntry>;
   errors: string[];
@@ -76,6 +84,10 @@ type AstNode = {
 
 function getErrorMessage(err: unknown) {
   return err instanceof Error ? err.message : String(err);
+}
+
+function location(filePath: string, line?: number) {
+  return line ? `${filePath}:${line}` : filePath;
 }
 
 function asAstNode(value: unknown): AstNode | null {
@@ -191,11 +203,13 @@ function formatQueryHeading(name: string, description = "") {
   return description ? `${name} - ${description}` : name;
 }
 
-function validateEntry(name: string, entry: QueryEntry) {
+function validateEntry(name: string, entry: QueryEntry, source?: QuerySourceInfo) {
   const errors: string[] = [];
+  const queryLoc = source ? location(source.filePath, source.queryLine) : "";
+  const queryPrefix = queryLoc ? `${queryLoc}: ` : "";
 
   if (!entry.sql.default || !entry.sql.default.trim()) {
-    errors.push(`[${name}] default sql block is required`);
+    errors.push(`${queryPrefix}[${name}] default sql block is required`);
   }
 
   const paramDefs = Array.isArray(entry.meta.params) ? entry.meta.params : [];
@@ -208,24 +222,27 @@ function validateEntry(name: string, entry: QueryEntry) {
   const internallyGeneratedParamNames = new Set(builderMeta.internalParams);
 
   for (const error of builderMeta.errors) {
-    errors.push(`[${name}] ${error}`);
+    const builderLoc = source ? location(source.filePath, source.builderLine || source.queryLine) : "";
+    errors.push(`${builderLoc ? `${builderLoc}: ` : ""}[${name}] ${error}`);
   }
 
   const dupParams = findDuplicates(paramNames);
   if (dupParams.length > 0) {
-    errors.push(`[${name}] duplicate params in meta: ${dupParams.join(", ")}`);
+    errors.push(`${queryPrefix}[${name}] duplicate params in meta: ${dupParams.join(", ")}`);
   }
 
   const undeclaredInputParams = builderMeta.inputParams.filter((p: string) => !paramNames.includes(p));
   if (undeclaredInputParams.length > 0) {
-    errors.push(`[${name}] params read in builder but not declared in meta: ${undeclaredInputParams.join(", ")}`);
+    const builderLoc = source ? location(source.filePath, source.builderLine || source.queryLine) : "";
+    errors.push(`${builderLoc ? `${builderLoc}: ` : ""}[${name}] params read in builder but not declared in meta: ${undeclaredInputParams.join(", ")}`);
   }
 
   const undeclaredBoundParams = builderMeta.boundParams.filter(
     (p: string) => !internallyGeneratedParamNames.has(p) && !paramNames.includes(p)
   );
   if (undeclaredBoundParams.length > 0) {
-    errors.push(`[${name}] params bound in builder but not declared in meta: ${undeclaredBoundParams.join(", ")}`);
+    const builderLoc = source ? location(source.filePath, source.builderLine || source.queryLine) : "";
+    errors.push(`${builderLoc ? `${builderLoc}: ` : ""}[${name}] params bound in builder but not declared in meta: ${undeclaredBoundParams.join(", ")}`);
   }
 
   const inputParamsWithoutType = builderMeta.inputParams.filter((p: string) => {
@@ -233,7 +250,7 @@ function validateEntry(name: string, entry: QueryEntry) {
     return def && !def.type;
   });
   if (inputParamsWithoutType.length > 0) {
-    errors.push(`[${name}] params read in builder must declare a type: ${inputParamsWithoutType.join(", ")}`);
+    errors.push(`${queryPrefix}[${name}] params read in builder must declare a type: ${inputParamsWithoutType.join(", ")}`);
   }
 
   const inputParamsWithoutDescription = builderMeta.inputParams.filter((p: string) => {
@@ -241,13 +258,15 @@ function validateEntry(name: string, entry: QueryEntry) {
     return def && !def.description;
   });
   if (inputParamsWithoutDescription.length > 0) {
-    errors.push(`[${name}] params read in builder must declare a description: ${inputParamsWithoutDescription.join(", ")}`);
+    errors.push(`${queryPrefix}[${name}] params read in builder must declare a description: ${inputParamsWithoutDescription.join(", ")}`);
   }
 
   for (const [dialect, sqlValue] of Object.entries(entry.sql)) {
+    const sqlLoc = source ? location(source.filePath, source.sqlLines[dialect] || source.queryLine) : "";
+    const sqlPrefix = sqlLoc ? `${sqlLoc}: ` : "";
     const sql = String(sqlValue || "");
     if (!sql || !sql.trim()) {
-      errors.push(`[${name}][${dialect}] SQL block is empty`);
+      errors.push(`${sqlPrefix}[${name}][${dialect}] SQL block is empty`);
       continue;
     }
 
@@ -261,13 +280,13 @@ function validateEntry(name: string, entry: QueryEntry) {
 
     if (metaOnly.length > 0) {
       errors.push(
-        `[${name}][${dialect}] params declared in meta but not used in SQL: ${metaOnly.join(", ")}`
+        `${sqlPrefix}[${name}][${dialect}] params declared in meta but not used in SQL: ${metaOnly.join(", ")}`
       );
     }
 
     if (sqlOnly.length > 0) {
       errors.push(
-        `[${name}][${dialect}] params used in SQL but not declared in meta: ${sqlOnly.join(", ")}`
+        `${sqlPrefix}[${name}][${dialect}] params used in SQL but not declared in meta: ${sqlOnly.join(", ")}`
       );
     }
   }
@@ -275,11 +294,13 @@ function validateEntry(name: string, entry: QueryEntry) {
   return errors;
 }
 
-function validateQueryReferences(filePath: string, queries: Record<string, QueryEntry>) {
+function validateQueryReferences(filePath: string, queries: Record<string, QueryEntry>, sources: Record<string, QuerySourceInfo> = {}) {
   const errors: string[] = [];
   const queryNames = Object.keys(queries);
 
   for (const [name, entry] of Object.entries(queries)) {
+    const source = sources[name];
+    const builderLoc = source ? location(filePath, source.builderLine || source.queryLine) : filePath;
     const builderMeta = extractBuilderScriptMeta(entry.meta.builder || "");
     const invalid = builderMeta.queryRefs.filter((queryName: string) => !isValidQueryId(queryName));
     const missing = builderMeta.queryRefs.filter(
@@ -287,11 +308,11 @@ function validateQueryReferences(filePath: string, queries: Record<string, Query
     );
 
     if (invalid.length > 0) {
-      errors.push(`${filePath}: [${name}] structure error: appendQuery references invalid query id: ${invalid.join(", ")}`);
+      errors.push(`${builderLoc}: [${name}] structure error: appendQuery references invalid query id: ${invalid.join(", ")}`);
     }
 
     if (missing.length > 0) {
-      errors.push(`${filePath}: [${name}] structure error: appendQuery references unknown query: ${missing.join(", ")}`);
+      errors.push(`${builderLoc}: [${name}] structure error: appendQuery references unknown query: ${missing.join(", ")}`);
     }
   }
 
@@ -534,18 +555,23 @@ export function parseMarkdownFile(filePath: string): ParseMarkdownResult {
   const lines = src.split(/\r?\n/);
   const queries: Record<string, QueryEntry> = {};
   const errors: string[] = [];
+  const sources: Record<string, QuerySourceInfo> = {};
 
   let currentName: string | null = null;
   let currentMeta: Partial<QueryMeta> = {};
   let currentParams: ParamMeta[] = [];
   let currentSql: Record<string, string> = {};
   let currentDescriptionFromHeading = false;
+  let currentQueryLine = 0;
+  let currentSqlLines: Record<string, number> = {};
+  let currentBuilderLine: number | undefined;
+  let currentParamLines: Record<string, number> = {};
 
   function flush() {
     if (!currentName) return;
 
     if (queries[currentName]) {
-      errors.push(`${filePath}: duplicate query name in file: ${currentName}`);
+      errors.push(`${location(filePath, currentQueryLine)}: duplicate query name in file: ${currentName}`);
       return;
     }
 
@@ -557,8 +583,16 @@ export function parseMarkdownFile(filePath: string): ParseMarkdownResult {
       sql: currentSql
     };
 
-    errors.push(...validateEntry(currentName, entry).map(e => `${filePath}: ${e}`));
+    const source = {
+      filePath,
+      queryLine: currentQueryLine,
+      sqlLines: currentSqlLines,
+      builderLine: currentBuilderLine,
+      paramLines: currentParamLines
+    };
+    errors.push(...validateEntry(currentName, entry, source));
     queries[currentName] = entry;
+    sources[currentName] = source;
   }
 
   for (let i = 0; i < lines.length; i++) {
@@ -573,11 +607,15 @@ export function parseMarkdownFile(filePath: string): ParseMarkdownResult {
       currentDescriptionFromHeading = Boolean(heading.description);
       currentParams = [];
       currentSql = {};
+      currentQueryLine = i + 1;
+      currentSqlLines = {};
+      currentBuilderLine = undefined;
+      currentParamLines = {};
 
       if (!currentName) {
-        errors.push(`${filePath}: empty query name`);
+        errors.push(`${location(filePath, i + 1)}: empty query name`);
       } else if (!isValidQueryId(currentName)) {
-        errors.push(`${filePath}: [${currentName}] structure error: invalid query id: ${currentName}`);
+        errors.push(`${location(filePath, i + 1)}: [${currentName}] structure error: invalid query id: ${currentName}`);
       }
 
       continue;
@@ -587,6 +625,7 @@ export function parseMarkdownFile(filePath: string): ParseMarkdownResult {
 
     const fenceMatch = line.match(/^```(.*)$/);
     if (fenceMatch) {
+      const fenceLine = i + 1;
       const info = fenceMatch[1].trim();
       const contentLines: string[] = [];
       let closed = false;
@@ -600,7 +639,7 @@ export function parseMarkdownFile(filePath: string): ParseMarkdownResult {
       }
 
       if (!closed) {
-        errors.push(`${filePath}: [${currentName}] unclosed fenced block`);
+        errors.push(`${location(filePath, fenceLine)}: [${currentName}] unclosed fenced block`);
         break;
       }
 
@@ -608,18 +647,20 @@ export function parseMarkdownFile(filePath: string): ParseMarkdownResult {
       const dialect = parseSqlInfo(info);
       if (dialect) {
         if (currentSql[dialect]) {
-          errors.push(`${filePath}: [${currentName}] duplicate sql block for dialect: ${dialect}`);
+          errors.push(`${location(filePath, fenceLine)}: [${currentName}][${dialect}] duplicate sql block for dialect: ${dialect}`);
         } else {
           currentSql[dialect] = content;
+          currentSqlLines[dialect] = fenceLine;
         }
         continue;
       }
 
       if (parseBuilderInfo(info)) {
         if ("builder" in currentMeta) {
-          errors.push(`${filePath}: [${currentName}] duplicate builder block`);
+          errors.push(`${location(filePath, fenceLine)}: [${currentName}] duplicate builder block`);
         } else {
           currentMeta.builder = content;
+          currentBuilderLine = fenceLine;
         }
       }
 
@@ -631,7 +672,7 @@ export function parseMarkdownFile(filePath: string): ParseMarkdownResult {
 
     if (text === "orderable:") {
       if ("orderable" in currentMeta) {
-        errors.push(`${filePath}: [${currentName}] duplicate meta key: orderable`);
+        errors.push(`${location(filePath, i + 1)}: [${currentName}] duplicate meta key: orderable`);
       } else {
         const orderable: Record<string, string> = {};
         let foundEntry = false;
@@ -652,7 +693,7 @@ export function parseMarkdownFile(filePath: string): ParseMarkdownResult {
         }
 
         if (!foundEntry) {
-          errors.push(`${filePath}: [${currentName}] orderable block is empty`);
+          errors.push(`${location(filePath, i + 1)}: [${currentName}] orderable block is empty`);
         } else {
           currentMeta.orderable = orderable;
         }
@@ -676,16 +717,18 @@ export function parseMarkdownFile(filePath: string): ParseMarkdownResult {
 
     if (key === "param") {
       try {
-        currentParams.push(parseParamMeta(value));
+        const param = parseParamMeta(value);
+        currentParams.push(param);
+        currentParamLines[param.name] = i + 1;
       } catch (err: unknown) {
-        errors.push(`${filePath}: [${currentName}] ${getErrorMessage(err)}`);
+        errors.push(`${location(filePath, i + 1)}: [${currentName}] ${getErrorMessage(err)}`);
       }
       continue;
     }
 
     if (key === "description") {
       if ("description" in currentMeta && !currentDescriptionFromHeading) {
-        errors.push(`${filePath}: [${currentName}] duplicate meta key: description`);
+        errors.push(`${location(filePath, i + 1)}: [${currentName}] duplicate meta key: description`);
       } else {
         currentMeta.description = value;
         currentDescriptionFromHeading = false;
@@ -695,7 +738,7 @@ export function parseMarkdownFile(filePath: string): ParseMarkdownResult {
 
     if (key === "tags") {
       if ("tags" in currentMeta) {
-        errors.push(`${filePath}: [${currentName}] duplicate meta key: tags`);
+        errors.push(`${location(filePath, i + 1)}: [${currentName}] duplicate meta key: tags`);
       } else {
         currentMeta.tags = value
           .split(",")
@@ -705,11 +748,11 @@ export function parseMarkdownFile(filePath: string): ParseMarkdownResult {
       continue;
     }
 
-    errors.push(`${filePath}: [${currentName}] unknown meta key: ${key}`);
+    errors.push(`${location(filePath, i + 1)}: [${currentName}] unknown meta key: ${key}`);
   }
 
   flush();
-  errors.push(...validateQueryReferences(filePath, queries));
+  errors.push(...validateQueryReferences(filePath, queries, sources));
 
   return {
     queries,
@@ -803,10 +846,13 @@ export class SqlRegistry {
 
   bind(name: string, params: Record<string, unknown> = {}, options: BindOptions = {}) {
     const entry = this.get(name);
-    validateParamTypes(params, buildParamTypeMap(entry.meta.params));
+    validateParamTypes(params, buildParamTypeMap(entry.meta.params), {
+      queryName: name
+    });
     const sql = this.getSql(name);
     return bindSql(sql, params, {
       dialect: this.dialect,
+      queryName: name,
       ...options
     });
   }
@@ -815,7 +861,9 @@ export class SqlRegistry {
     const entry = this.get(name);
     const sql = this.getSql(name);
     const paramTypes = buildParamTypeMap(entry.meta.params);
-    validateParamTypes(options.params || {}, paramTypes);
+    validateParamTypes(options.params || {}, paramTypes, {
+      queryName: name
+    });
     const orderable = {
       ...(entry.meta.orderable || {}),
       ...(options.orderable || {})

@@ -11,6 +11,7 @@ export type SqlStatement = {
 export type BindSqlOptions = {
   strict?: boolean;
   dialect?: string;
+  queryName?: string;
 };
 
 export function bindSql(sql: string, params: Record<string, unknown> = {}, options: BindSqlOptions = {}): SqlStatement {

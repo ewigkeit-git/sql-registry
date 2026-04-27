@@ -11,12 +11,19 @@ export class SqlBindError extends Error {
   }
 }
 
-export function validateBindParams(sql: string, paramNames: string[], params: Record<string, unknown> = {}, options: { strict?: boolean } = {}) {
+export function validateBindParams(
+  sql: string,
+  paramNames: string[],
+  params: Record<string, unknown> = {},
+  options: { strict?: boolean; queryName?: string; dialect?: string } = {}
+) {
   const { strict = true } = options;
 
   const missing = paramNames.filter(name => !(name in params));
   if (missing.length > 0) {
     throw new SqlBindError(`missing params: ${missing.join(", ")}`, {
+      queryName: options.queryName,
+      dialect: options.dialect,
       missing,
       sql
     });
@@ -26,6 +33,8 @@ export function validateBindParams(sql: string, paramNames: string[], params: Re
     const extra = Object.keys(params).filter(name => !paramNames.includes(name));
     if (extra.length > 0) {
       throw new SqlBindError(`unknown params: ${extra.join(", ")}`, {
+        queryName: options.queryName,
+        dialect: options.dialect,
         extra,
         sql
       });

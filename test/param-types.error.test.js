@@ -409,6 +409,25 @@ test("SqlRegistry validates typed params on bind", async () => {
   assertInvalidParam(registry, "id", "1");
 });
 
+test("SqlRegistry typed param errors include query and param context", async () => {
+  const registry = registryWithParam(
+    "id",
+    "integer",
+    "SELECT * FROM users WHERE id = :id"
+  );
+
+  assert.throws(
+    () => registry.bind("test", { id: "1" }),
+    error => {
+      assert.strictEqual(error.details.category, "input");
+      assert.strictEqual(error.details.queryName, "test");
+      assert.strictEqual(error.details.paramName, "id");
+      assert.strictEqual(error.details.expected, "integer");
+      return true;
+    }
+  );
+});
+
 test("SqlBuilder validates typed params from builder fragments", async () => {
   const registry = new SqlRegistry({ strict: false });
   registry.queries["users.searchTyped"] = {

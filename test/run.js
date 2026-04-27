@@ -91,6 +91,22 @@ test("validateBindParams owns missing and unknown param checks", async () => {
   );
 });
 
+test("bind input errors include query dialect and param context", async () => {
+  assert.throws(
+    () => validateBindParams("select :id", ["id"], {}, {
+      dialect: "pg",
+      queryName: "users.find"
+    }),
+    error => {
+      assert.strictEqual(error.details.category, "input");
+      assert.strictEqual(error.details.queryName, "users.find");
+      assert.strictEqual(error.details.dialect, "pg");
+      assert.deepStrictEqual(error.details.missing, ["id"]);
+      return true;
+    }
+  );
+});
+
 test("compileSql owns placeholder conversion and value ordering", async () => {
   const sql = "select :id as id, :role as role, :id as again";
   const tokens = extractNamedParamTokens(sql);
@@ -566,6 +582,23 @@ test("SqlBuilder append rejects params not used by SQL", async () => {
     error => {
       assert.ok(error instanceof SqlBuilderError);
       assert.match(error.message, /append params not used in SQL: active/);
+      return true;
+    }
+  );
+});
+
+test("SqlBuilder slot errors include query and slot context", async () => {
+  const builder = new SqlBuilder(
+    null,
+    "users.search",
+    "SELECT * FROM users /*#where*/"
+  );
+
+  assert.throws(
+    () => builder.append("missing", "WHERE id = :id", { id: 1 }),
+    error => {
+      assert.strictEqual(error.details.queryName, "users.search");
+      assert.strictEqual(error.details.slotName, "missing");
       return true;
     }
   );

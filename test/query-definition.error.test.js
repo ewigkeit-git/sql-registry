@@ -114,6 +114,39 @@ test("SqlRegistry rejects invalid query ids", async () => {
   );
 });
 
+test("SqlRegistry validation errors include file line query and dialect context", async () => {
+  const fixturePath = path.join(__dirname, ".tmp", "registry-error-context.md");
+  writeFixture(fixturePath, [
+    "## users.find",
+    "",
+    "param: missing:string - Missing param",
+    "",
+    "```sql pg",
+    "SELECT * FROM users WHERE id = :id",
+    "```",
+    "",
+    "```sql",
+    "SELECT * FROM users WHERE name = :name",
+    "```",
+    ""
+  ]);
+
+  const registry = new SqlRegistry();
+
+  assert.throws(
+    () => registry.loadFile(fixturePath),
+    error => {
+      const messages = error.errors.join("\n");
+      assert.match(messages, /registry-error-context\.md:5: \[users\.find\]\[pg\]/);
+      assert.match(messages, /registry-error-context\.md:9: \[users\.find\]\[default\]/);
+      assert.match(messages, /params declared in meta but not used in SQL: missing/);
+      assert.match(messages, /params used in SQL but not declared in meta: id/);
+      assert.match(messages, /params used in SQL but not declared in meta: name/);
+      return true;
+    }
+  );
+});
+
 test("SqlRegistry accepts query ids made from letters digits underscore dot and hyphen", async () => {
   const fixturePath = path.join(__dirname, ".tmp", "registry-valid-query-id.md");
   writeFixture(fixturePath, [
