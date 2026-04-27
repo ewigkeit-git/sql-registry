@@ -33,7 +33,7 @@ export class SqlRegistryAdapter {
 
   constructor(registry: SqlRegistryLike, options: AdapterOptions = {}) {
     if (!registry) {
-      throw new Error("registry is required");
+      throw new Error("input error: registry is required");
     }
 
     this.registry = registry;
@@ -91,6 +91,6 @@ export class SqlRegistryAdapter {
   }
 
   executeStatement(_executor?: unknown, _stmt?: SqlStatement, _options?: AdapterOptions): unknown {
-    throw new Error("executeStatement(executor, stmt, options) must be implemented");
+    throw new Error("input error: executeStatement(executor, stmt, options) must be implemented");
   }
 }

@@ -71,7 +71,7 @@ export class SequelizeAdapter extends SqlRegistryAdapter {
     const queryOptions = options.queryOptions || {};
 
     if ("replacements" in queryOptions) {
-      throw new Error("queryOptions.replacements is managed by SequelizeAdapter");
+      throw new Error("input error: queryOptions.replacements is managed by SequelizeAdapter");
     }
 
     return instance.query(stmt.sql, {
@@ -127,6 +127,6 @@ function isSequelizeLike(value: unknown): value is SequelizeLike {
 
 function assertSequelize(sequelize: unknown): asserts sequelize is SequelizeLike {
   if (!isSequelizeLike(sequelize)) {
-    throw new Error("sequelize instance with query(sql, options) is required");
+    throw new Error("input error: sequelize instance with query(sql, options) is required");
   }
 }

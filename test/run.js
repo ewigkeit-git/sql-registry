@@ -19,6 +19,8 @@ const { test, run } = require("./harness");
 require("./param-parser.test");
 require("./param-types.normal.test");
 require("./param-types.error.test");
+require("./builder.error.test");
+require("./query-definition.error.test");
 
 function getNodeSqliteDatabaseSync() {
   try {
@@ -1514,6 +1516,81 @@ test("SqlRegistryAdapter can explain by SQL ID", async () => {
     sql: "EXPLAIN ANALYZE SELECT * FROM users WHERE id = $1",
     values: [1]
   });
+});
+
+test("SqlRegistryAdapter rejects input errors before adapter execution", async () => {
+  class MemoryAdapter extends SqlRegistryAdapter {
+    async executeStatement() {
+      throw new Error("adapter should not execute invalid input");
+    }
+  }
+
+  const registry = new SqlRegistry({ strict: false });
+  registry.queries["users.findById"] = {
+    meta: {
+      params: [
+        {
+          name: "id",
+          type: "integer",
+          description: "User ID"
+        }
+      ]
+    },
+    sql: {
+      default: "SELECT * FROM users WHERE id = :id"
+    }
+  };
+
+  const adapter = new MemoryAdapter(registry);
+
+  await assert.rejects(
+    () => adapter.query({}, "users.findById", {
+      params: {
+        id: "1"
+      }
+    }),
+    error => {
+      assert.strictEqual(error.message, "input error: invalid type for param: id");
+      assert.strictEqual(error.details.category, "input");
+      return true;
+    }
+  );
+});
+
+test("SqlRegistryAdapter leaves DB errors to adapter execution", async () => {
+  class MemoryAdapter extends SqlRegistryAdapter {
+    async executeStatement(_executor, stmt) {
+      assert.deepStrictEqual(stmt, {
+        sql: "S LECT * FROM users WHERE id = ?",
+        values: [1]
+      });
+      throw new Error("driver syntax error");
+    }
+  }
+
+  const registry = new SqlRegistry({ strict: false });
+  registry.queries["users.badSql"] = {
+    meta: {
+      params: []
+    },
+    sql: {
+      default: "S LECT * FROM users WHERE id = :id"
+    }
+  };
+
+  const adapter = new MemoryAdapter(registry);
+
+  await assert.rejects(
+    () => adapter.query({}, "users.badSql", {
+      params: {
+        id: 1
+      }
+    }),
+    error => {
+      assert.strictEqual(error.message, "driver syntax error");
+      return true;
+    }
+  );
 });
 
 test("BetterSqlite3Adapter queries by SQL ID", async () => {

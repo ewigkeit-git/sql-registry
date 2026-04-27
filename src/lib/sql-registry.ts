@@ -106,7 +106,10 @@ export class SqlRegistryValidationError extends SqlRegistryError {
   errors: string[];
 
   constructor(message: string, errors: string[] = []) {
-    super(message, { errors });
+    super(message.startsWith("structure error:") ? message : `structure error: ${message}`, {
+      category: "structure",
+      errors
+    });
     this.name = "SqlRegistryValidationError";
     this.errors = errors;
   }
@@ -115,7 +118,9 @@ export class SqlRegistryValidationError extends SqlRegistryError {
 function parseParamMeta(value: string): ParamMeta {
   const match = value.trim().match(/^([A-Za-z_][A-Za-z0-9_]*)(?::([A-Za-z_][A-Za-z0-9_]*))?(?:\s*-\s*(.+))?$/);
   if (!match) {
-    throw new SqlRegistryError(`invalid param format: ${value}`);
+    throw new SqlRegistryError(`structure error: invalid param format: ${value}`, {
+      category: "structure"
+    });
   }
 
   const meta: ParamMeta = {
@@ -243,16 +248,34 @@ function validateEntry(name: string, entry: QueryEntry) {
   return errors;
 }
 
+function validateQueryReferences(filePath: string, queries: Record<string, QueryEntry>) {
+  const errors: string[] = [];
+  const queryNames = Object.keys(queries);
+
+  for (const [name, entry] of Object.entries(queries)) {
+    const builderMeta = extractBuilderScriptMeta(entry.meta.builder || "");
+    const missing = builderMeta.queryRefs.filter((queryName: string) => !queryNames.includes(queryName));
+
+    if (missing.length > 0) {
+      errors.push(`${filePath}: [${name}] structure error: appendQuery references unknown query: ${missing.join(", ")}`);
+    }
+  }
+
+  return errors;
+}
+
 function extractBuilderScriptMeta(code: string) {
   const inputParams = new Set<string>();
   const boundParams = new Set<string>();
   const internalParams = new Set<string>();
+  const queryRefs = new Set<string>();
 
   if (!code || !code.trim()) {
     return {
       inputParams: [],
       boundParams: [],
       internalParams: [],
+      queryRefs: [],
       errors: []
     };
   }
@@ -268,7 +291,8 @@ function extractBuilderScriptMeta(code: string) {
       inputParams: [],
       boundParams: [],
       internalParams: [],
-      errors: [`builder script parse error: ${getErrorMessage(err)}`]
+      queryRefs: [],
+      errors: [`structure error: builder script parse error: ${getErrorMessage(err)}`]
     };
   }
 
@@ -322,6 +346,14 @@ function extractBuilderScriptMeta(code: string) {
           }
         }
       }
+
+      if (calleeName === "appendQuery") {
+        const queryNameArgIndex = asAstNode(astNode.callee)?.type === "MemberExpression" ? 0 : 1;
+        const queryNameArg = astArray(astNode.arguments)[queryNameArgIndex];
+        if (queryNameArg?.type === "Literal" && typeof queryNameArg.value === "string") {
+          queryRefs.add(String(queryNameArg.value));
+        }
+      }
     }
 
     for (const value of Object.values(node)) {
@@ -337,6 +369,7 @@ function extractBuilderScriptMeta(code: string) {
     inputParams: [...inputParams],
     boundParams: [...boundParams],
     internalParams: [...internalParams],
+    queryRefs: [...queryRefs],
     errors: []
   };
 }
@@ -390,12 +423,15 @@ export function resolveImports(
 
   if (stack.includes(fullPath)) {
     throw new SqlRegistryError(
-      `circular import detected: ${[...stack, fullPath].join(" -> ")}`
+      `structure error: circular import detected: ${[...stack, fullPath].join(" -> ")}`,
+      { category: "structure" }
     );
   }
 
   if (!fs.existsSync(fullPath)) {
-    throw new SqlRegistryError(`markdown file not found: ${fullPath}`);
+    throw new SqlRegistryError(`structure error: markdown file not found: ${fullPath}`, {
+      category: "structure"
+    });
   }
 
   collectedFiles.add(fullPath);
@@ -414,7 +450,9 @@ export function resolveImports(
     }
 
     if (isImportDirectiveError(parsed)) {
-      throw new SqlRegistryError(`${parsed.error} in ${fullPath}`);
+      throw new SqlRegistryError(`structure error: ${parsed.error} in ${fullPath}`, {
+        category: "structure"
+      });
     }
 
     const importTarget = parsed.path;
@@ -631,6 +669,7 @@ export function parseMarkdownFile(filePath: string): ParseMarkdownResult {
   }
 
   flush();
+  errors.push(...validateQueryReferences(filePath, queries));
 
   return {
     queries,
@@ -671,7 +710,7 @@ export class SqlRegistry {
       if (this.queries[name]) {
         const error = `duplicate query name across registry: ${name}`;
         if (this.strict) {
-          throw new SqlRegistryValidationError("failed to merge registry", [error]);
+          throw new SqlRegistryValidationError("failed to merge registry", [`structure error: ${error}`]);
         }
         continue;
       }
@@ -694,7 +733,8 @@ export class SqlRegistry {
   get(name: string) {
     const entry = this.queries[name];
     if (!entry) {
-      throw new SqlRegistryError(`query not found: ${name}`, {
+      throw new SqlRegistryError(`input error: query not found: ${name}`, {
+        category: "input",
         queryName: name
       });
     }
@@ -711,7 +751,8 @@ export class SqlRegistry {
     const sql = entry.sql[dialect] || entry.sql.default;
 
     if (!sql) {
-      throw new SqlRegistryError(`sql not found`, {
+      throw new SqlRegistryError(`structure error: sql not found`, {
+        category: "structure",
         queryName: name,
         dialect
       });

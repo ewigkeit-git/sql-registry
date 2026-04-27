@@ -70,7 +70,7 @@ export class MariadbAdapter extends SqlRegistryAdapter {
 
     const queryOptions = options.queryOptions || {};
     if ("sql" in queryOptions || "values" in queryOptions) {
-      throw new Error("queryOptions.sql and queryOptions.values are managed by MariadbAdapter");
+      throw new Error("input error: queryOptions.sql and queryOptions.values are managed by MariadbAdapter");
     }
 
     if (Object.keys(queryOptions).length > 0) {
@@ -130,6 +130,6 @@ function isMariadbLike(value: unknown): value is MariadbLike {
 
 function assertMariadb(connection: unknown): asserts connection is MariadbLike {
   if (!isMariadbLike(connection)) {
-    throw new Error("mariadb connection or pool with query(sql, values) is required");
+    throw new Error("input error: mariadb connection or pool with query(sql, values) is required");
   }
 }

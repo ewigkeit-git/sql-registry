@@ -68,13 +68,13 @@ export class BetterSqlite3Adapter extends SqlRegistryAdapter {
     const method = String(methodValue);
 
     if (!METHODS.has(method)) {
-      throw new Error(`unsupported better-sqlite3 method: ${method}`);
+      throw new Error(`input error: unsupported better-sqlite3 method: ${method}`);
     }
 
     const statement = applyStatementOptions(database.prepare(stmt.sql), queryOptions);
     const statementMethod = statement[method];
     if (typeof statementMethod !== "function") {
-      throw new Error(`better-sqlite3 statement method is not supported: ${method}`);
+      throw new Error(`input error: better-sqlite3 statement method is not supported: ${method}`);
     }
     return statementMethod.call(statement, ...stmt.values);
   }
@@ -138,7 +138,7 @@ function isDatabaseLike(value: unknown): value is BetterSqlite3Database {
 
 function assertDatabase(db: unknown): asserts db is BetterSqlite3Database {
   if (!isDatabaseLike(db)) {
-    throw new Error("better-sqlite3 database with prepare(sql) is required");
+    throw new Error("input error: better-sqlite3 database with prepare(sql) is required");
   }
 }
 
@@ -152,7 +152,7 @@ function applyStatementOptions(statement: BetterSqlite3Statement, queryOptions: 
 
     const optionFn = current[name];
     if (typeof optionFn !== "function") {
-      throw new Error(`better-sqlite3 statement option is not supported: ${name}`);
+      throw new Error(`input error: better-sqlite3 statement option is not supported: ${name}`);
     }
 
     current = queryOptions[name] === true

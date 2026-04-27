@@ -39,7 +39,8 @@ export function normalizeParamType(type: string) {
 
   const normalized = TYPE_ALIASES[String(type).trim().toLowerCase()];
   if (!normalized) {
-    throw new SqlParamTypeError(`unsupported param type: ${type}`, {
+    throw new SqlParamTypeError(`structure error: unsupported param type: ${type}`, {
+      category: "structure",
       type
     });
   }
@@ -88,7 +89,8 @@ function isValueOfType(value: unknown, type: string) {
     case PARAM_TYPES.JSON:
       return isPlainJsonValue(value);
     default:
-      throw new SqlParamTypeError(`unsupported param type: ${type}`, {
+      throw new SqlParamTypeError(`structure error: unsupported param type: ${type}`, {
+        category: "structure",
         type
       });
   }
@@ -117,7 +119,8 @@ export function validateParamTypes(params: Record<string, unknown> = {}, paramTy
 
     const value = params[name];
     if (!isValueOfType(value, type)) {
-      throw new SqlParamTypeError(`invalid type for param: ${name}`, {
+      throw new SqlParamTypeError(`input error: invalid type for param: ${name}`, {
+        category: "input",
         paramName: name,
         expected: type,
         actual: Array.isArray(value) ? "array" : typeof value

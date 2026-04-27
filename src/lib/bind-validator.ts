@@ -2,9 +2,12 @@ export class SqlBindError extends Error {
   details: Record<string, unknown>;
 
   constructor(message: string, details: Record<string, unknown> = {}) {
-    super(message);
+    super(message.startsWith("input error:") ? message : `input error: ${message}`);
     this.name = "SqlBindError";
-    this.details = details;
+    this.details = {
+      category: "input",
+      ...details
+    };
   }
 }
 

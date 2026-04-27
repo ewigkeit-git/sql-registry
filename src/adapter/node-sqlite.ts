@@ -73,13 +73,13 @@ export class NodeSqliteAdapter extends SqlRegistryAdapter {
     const method = String(methodValue);
 
     if (!METHODS.has(method)) {
-      throw new Error(`unsupported node:sqlite method: ${method}`);
+      throw new Error(`input error: unsupported node:sqlite method: ${method}`);
     }
 
     const statement = applyStatementOptions(database.prepare(stmt.sql), queryOptions);
     const statementMethod = statement[method];
     if (typeof statementMethod !== "function") {
-      throw new Error(`node:sqlite statement method is not supported: ${method}`);
+      throw new Error(`input error: node:sqlite statement method is not supported: ${method}`);
     }
     return statementMethod.call(statement, ...stmt.values);
   }
@@ -143,7 +143,7 @@ function isDatabaseLike(value: unknown): value is NodeSqliteDatabase {
 
 function assertDatabase(db: unknown): asserts db is NodeSqliteDatabase {
   if (!isDatabaseLike(db)) {
-    throw new Error("node:sqlite DatabaseSync with prepare(sql) is required");
+    throw new Error("input error: node:sqlite DatabaseSync with prepare(sql) is required");
   }
 }
 
@@ -155,7 +155,7 @@ function applyStatementOptions(statement: NodeSqliteStatement, queryOptions: Rec
 
     const optionFn = statement[name];
     if (typeof optionFn !== "function") {
-      throw new Error(`node:sqlite statement option is not supported: ${name}`);
+      throw new Error(`input error: node:sqlite statement option is not supported: ${name}`);
     }
 
     optionFn.call(statement, queryOptions[name]);
