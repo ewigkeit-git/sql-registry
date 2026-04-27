@@ -140,6 +140,7 @@ const scriptCases = [
   ["do-while", "do { append('where', 'AND active = :active', { active: true }) } while (params.active)", /loop statements/],
   ["deep-if", "if (params.a) { if (params.b) { if (params.c) { append('where', 'AND id = :id', { id: 1 }) } } }", /if nesting/],
   ["function-declaration", "function x() {}", /unsupported statement/],
+  ["arrow-function", "const fn = () => 1", /unsupported expression/],
   ["class-declaration", "class X {}", /unsupported statement/],
   ["return", "return", /unsupported statement|failed to run/],
   ["throw", "throw new Error('x')", /unsupported statement/],
@@ -150,14 +151,21 @@ const scriptCases = [
   ["array-destructure", "const [id] = params.ids", /unsupported variable pattern/],
   ["var", "var id = 1", /unsupported variable declaration/],
   ["assignment", "params.id = 1", /unsupported expression/],
+  ["assignment-to-context", "context.id = 1", /unsupported expression/],
   ["update", "let i = 1; i++", /unsupported expression/],
   ["spread-call", "append(...params.args)", /spread arguments|slot name must be a string literal/],
   ["computed-object-key", "append('where', 'AND id = :id', { [params.key]: 1 })", /computed object keys/],
   ["spread-object", "append('where', 'AND id = :id', { ...params.binds })", /unsupported object property/],
   ["forbidden-param-key", "param({ constructor: 1 })", /forbidden property access/],
   ["forbidden-member", "params.constructor", /forbidden property access/],
+  ["forbidden-proto-member", "params.__proto__", /forbidden property access/],
+  ["forbidden-prototype-member", "params.prototype", /forbidden property access/],
   ["null-member", "context.missing.value", /cannot read property/],
   ["unsupported-logical", "params.a ?? params.b", /unsupported logical operator|unsupported expression|failed to run/],
+  ["optional-chaining", "params?.id", /unsupported expression/],
+  ["global-this", "globalThis.process", /unknown identifier/],
+  ["require", "require('fs')", /unsupported function/],
+  ["function-constructor", "Function('return 1')", /unsupported function/],
   ["unsupported-callee", "(params.fn)()", /unsupported callee|method calls/],
   ["new-expression", "new Date()", /unsupported expression/],
   ["await-expression", "await params.id", /failed to run|Unexpected/],
@@ -221,5 +229,5 @@ test("SqlBuilder rejects more than 100 invalid builder and append patterns", asy
     );
   }
 
-  assert.strictEqual(count, 111);
+  assert.strictEqual(count, 119);
 });

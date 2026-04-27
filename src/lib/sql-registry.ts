@@ -436,7 +436,7 @@ export function resolveImports(
 
   collectedFiles.add(fullPath);
 
-  const src = fs.readFileSync(fullPath, "utf-8");
+  const src = fs.readFileSync(fullPath, "utf-8").replace(/^\uFEFF/, "");
   const dir = path.dirname(fullPath);
   const lines = src.split(/\r?\n/);
   const out = [];

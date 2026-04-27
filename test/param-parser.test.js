@@ -99,9 +99,34 @@ const extractionCases = [
     names: ["id"]
   },
   {
+    name: "postgres cast with schema-qualified type does not create param",
+    sql: "select :value::public.custom_type",
+    names: ["value"]
+  },
+  {
+    name: "postgres array cast does not create param",
+    sql: "select :ids::int[]",
+    names: ["ids"]
+  },
+  {
+    name: "postgres jsonb cast does not create param",
+    sql: "select :payload::jsonb",
+    names: ["payload"]
+  },
+  {
     name: "double colon alone ignored",
     sql: "select now()::timestamp",
     names: []
+  },
+  {
+    name: "multiple postgres casts without named params are ignored",
+    sql: "select now()::timestamp, '{}'::jsonb, array[1,2]::int[]",
+    names: []
+  },
+  {
+    name: "postgres casts between named params keep only named params",
+    sql: "where created_at >= :from::timestamp and status = :status::text",
+    names: ["from", "status"]
   },
   {
     name: "url-ish double colon ignored after first colon",
