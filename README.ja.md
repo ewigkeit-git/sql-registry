@@ -591,7 +591,7 @@ param: limit:int - Page size
 - `number` / `float`
 - `integer` / `int`
 - `boolean` / `bool`
-- `date`
+- `date` / `datetime` / `timestamp`
 - `json`
 - `any`
 

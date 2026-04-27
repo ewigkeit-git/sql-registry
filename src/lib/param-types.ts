@@ -19,6 +19,8 @@ const TYPE_ALIASES: Record<string, string> = Object.freeze({
   boolean: PARAM_TYPES.BOOLEAN,
   bool: PARAM_TYPES.BOOLEAN,
   date: PARAM_TYPES.DATE,
+  datetime: PARAM_TYPES.DATE,
+  timestamp: PARAM_TYPES.DATE,
   json: PARAM_TYPES.JSON
 });
 

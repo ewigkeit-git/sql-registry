@@ -1,5 +1,18 @@
 export type Dialect = "sqlite" | "mysql" | "pg";
-export type ParamType = "any" | "string" | "number" | "integer" | "boolean" | "date" | "json";
+export type ParamType =
+  | "any"
+  | "string"
+  | "text"
+  | "number"
+  | "float"
+  | "integer"
+  | "int"
+  | "boolean"
+  | "bool"
+  | "date"
+  | "datetime"
+  | "timestamp"
+  | "json";
 
 export type SqlStatement = {
   sql: string;

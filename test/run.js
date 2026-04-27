@@ -15,6 +15,7 @@ const {
 } = require("../index");
 const { SqlBuilder, SqlBuilderError } = require("../dist/lib/builder");
 const { buildExplain } = require("../dist/lib/explain-builder");
+const { normalizeParamType } = require("../dist/lib/param-types");
 const { test, run } = require("./harness");
 require("./param-parser.test");
 
@@ -1057,6 +1058,37 @@ test("SqlRegistry parses typed params", async () => {
       type: "boolean"
     }
   ]);
+});
+
+test("param type aliases normalize datetime and timestamp to date", async () => {
+  assert.strictEqual(normalizeParamType("datetime"), "date");
+  assert.strictEqual(normalizeParamType("timestamp"), "date");
+});
+
+test("timestamp params accept database datetime strings", async () => {
+  const registry = new SqlRegistry({ strict: false });
+  registry.queries["events.findAfter"] = {
+    meta: {
+      params: [
+        {
+          name: "createdAt",
+          type: "date",
+          description: "Created timestamp"
+        }
+      ]
+    },
+    sql: {
+      default: "SELECT * FROM events WHERE created_at >= :createdAt"
+    }
+  };
+
+  assert.deepStrictEqual(
+    registry.bind("events.findAfter", { createdAt: "2026-04-27 12:34:56.789" }),
+    {
+      sql: "SELECT * FROM events WHERE created_at >= ?",
+      values: ["2026-04-27 12:34:56.789"]
+    }
+  );
 });
 
 test("SqlRegistry validates typed params on bind", async () => {
