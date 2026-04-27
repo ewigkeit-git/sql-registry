@@ -100,6 +100,17 @@ const stmt = registry.builder("users.search", {
 }
 ```
 
+## 責務の範囲
+
+sql-registry は SQL パーサではありません。
+
+- SQL 構文の正しさは DB / driver に任せます
+- `SELECT` が 1 行返すか複数行返すかは SQL の作りに任せます
+- adapter は driver の結果を薄く返します
+- 1 行だけ欲しい場合は、SQL 側で条件や `LIMIT 1` を設計し、呼び出し側で結果配列の先頭を扱ってください
+
+sql-registry が扱うのは、named parameter の bind、param metadata の検証、builder による安全な SQL 断片追加、dialect 別 SQL の選択です。
+
 SQL は読みやすい Markdown に残り、実行時入力は bind values と allowlist に閉じ込められます。
 
 ## ORM と共存できる
@@ -151,9 +162,6 @@ const rows = await adapter.query("reports.monthlySales", {
     from,
     to,
     region
-  },
-  queryOptions: {
-    type: "SELECT"
   }
 });
 ```
@@ -834,9 +842,6 @@ const adapter = new SequelizeAdapter(sequelize, registry);
 const rows = await adapter.query("users.findById", {
   params: {
     id: 1
-  },
-  queryOptions: {
-    type: "SELECT"
   }
 });
 ```
