@@ -26,6 +26,7 @@ const BUILDER_FUNCTION_NAMES = new Set([
   "append",
   "appendQuery",
   "param",
+  "set",
   "orderBy",
   "limit",
   "offset"
@@ -217,6 +218,10 @@ function validateBuilderCallArguments(node: AstNode) {
         return;
       case "param":
         assertObjectExpressionArgument(args, 0, "param params");
+        return;
+      case "set":
+        assertStaticStringArgument(args, 0, "set SQL");
+        assertObjectExpressionArgument(args, 1, "set params");
         return;
       case "orderBy":
       case "limit":
@@ -576,6 +581,7 @@ export class SqlBuilder {
   baseSql: string;
   params: Record<string, unknown>;
   slots: Record<string, string[]>;
+  slotJoiners: Record<string, string>;
   dialect: string;
   orderable: Record<string, string>;
   allowedSlots: Set<string>;
@@ -590,6 +596,7 @@ export class SqlBuilder {
 
     this.params = {};
     this.slots = {};
+    this.slotJoiners = {};
 
     this.dialect = options.dialect || "sqlite";
     this.orderable = options.orderable || {};
@@ -656,6 +663,11 @@ export class SqlBuilder {
 
   append(slotName: string, sql: string, params: Record<string, unknown> = {}) {
     return this.appendTo(slotName, sql, params);
+  }
+
+  set(sql: string, params: Record<string, unknown> = {}) {
+    this.slotJoiners.set = ",\n";
+    return this.appendTo("set", sql, params);
   }
 
   validateAppendQueryParams(queryName: string, sql: string, params?: Record<string, unknown>) {
@@ -741,7 +753,7 @@ export class SqlBuilder {
       /\/\*#([A-Za-z_][A-Za-z0-9_.-]*)\*\//g,
       (_, slotName) => {
         usedSlots.add(slotName);
-        return (this.slots[slotName] || []).join("\n");
+        return (this.slots[slotName] || []).join(this.slotJoiners[slotName] || "\n");
       }
     );
 
@@ -783,6 +795,11 @@ export class SqlBuilder {
 
       param: (bindParams: Record<string, unknown> = {}) => {
         this.addParams(bindParams);
+        return this;
+      },
+
+      set: (sql: string, bindParams: Record<string, unknown> = {}) => {
+        this.set(sql, bindParams);
         return this;
       },
 

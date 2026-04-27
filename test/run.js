@@ -300,6 +300,56 @@ test("runBuilderScript rejects dynamic append params objects", async () => {
   );
 });
 
+test("runBuilderScript rejects dynamic set SQL fragments", async () => {
+  const builder = new SqlBuilder(
+    null,
+    "users.update",
+    "UPDATE users SET /*#set*/ WHERE id = :id"
+  );
+
+  assert.throws(
+    () => builder.runBuilderScript(
+      "set(params.sql)",
+      {
+        params: {
+          sql: "name = :name"
+        }
+      }
+    ),
+    error => {
+      assert.ok(error instanceof SqlBuilderError);
+      assert.match(error.message, /set SQL must be a string literal/);
+      return true;
+    }
+  );
+});
+
+test("runBuilderScript rejects dynamic set params objects", async () => {
+  const builder = new SqlBuilder(
+    null,
+    "users.update",
+    "UPDATE users SET /*#set*/ WHERE id = :id"
+  );
+
+  assert.throws(
+    () => builder.runBuilderScript(
+      "set('name = :name', params.binds)",
+      {
+        params: {
+          binds: {
+            name: "Alice"
+          }
+        }
+      }
+    ),
+    error => {
+      assert.ok(error instanceof SqlBuilderError);
+      assert.match(error.message, /set params must be an object literal/);
+      return true;
+    }
+  );
+});
+
 test("runBuilderScript rejects aliased append helper calls", async () => {
   const builder = new SqlBuilder(
     null,
@@ -516,6 +566,24 @@ test("SqlBuilder validates and coerces limit and offset", async () => {
     () => builder.offset("paging", "1.5"),
     /offset must be a non-negative integer/
   );
+});
+
+test("SqlBuilder set joins fragments with commas", async () => {
+  const builder = new SqlBuilder(
+    null,
+    "users.update",
+    "UPDATE users SET /*#set*/ WHERE id = :id"
+  );
+
+  builder
+    .addParams({ id: 1 })
+    .set("name = :name", { name: "Alice" })
+    .set("status = :status", { status: "active" });
+
+  assert.deepStrictEqual(builder.build(), {
+    sql: "UPDATE users SET name = ?,\nstatus = ? WHERE id = ?",
+    values: ["Alice", "active", 1]
+  });
 });
 
 test("runBuilderScript allows one nested if", async () => {
@@ -882,21 +950,15 @@ test("SqlRegistry loads image query markdown used by another app", async () => {
       "",
       "```js builder",
       "if (params.hasState) {",
-      "  append('set', 'state = :state', {",
+      "  set('state = :state', {",
       "    state: params.state",
       "  });",
       "}",
       "",
       "if (params.hasPrimarySubject) {",
-      "  if (params.hasState) {",
-      "    append('set', ', primary_subject = :primarySubject', {",
-      "      primarySubject: params.primarySubject",
-      "    });",
-      "  } else {",
-      "    append('set', 'primary_subject = :primarySubject', {",
-      "      primarySubject: params.primarySubject",
-      "    });",
-      "  }",
+      "  set('primary_subject = :primarySubject', {",
+      "    primarySubject: params.primarySubject",
+      "  });",
       "}",
       "```",
       "",
@@ -987,8 +1049,8 @@ test("SqlRegistry loads image query markdown used by another app", async () => {
       sql: [
         "UPDATE images",
         "SET",
-        "state = ?",
-        ", primary_subject = ?",
+        "state = ?,",
+        "primary_subject = ?",
         "WHERE id = ?"
       ].join("\n"),
       values: ["done", null, "img-1"]

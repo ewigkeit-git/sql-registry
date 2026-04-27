@@ -85,6 +85,7 @@ export class SqlBuilder {
   append(slotName: string, sql: string, params?: Record<string, unknown>): this;
   appendQuery(slotName: string, queryName: string, params?: Record<string, unknown>): this;
   addParams(params?: Record<string, unknown>): this;
+  set(sql: string, params?: Record<string, unknown>): this;
   orderBy(slotName: string, columnKey: string, asc?: boolean): this;
   limit(slotName: string, value: number | string | null | undefined): this;
   offset(slotName: string, value: number | string | null | undefined): this;
