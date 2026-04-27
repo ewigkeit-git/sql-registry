@@ -2,9 +2,11 @@
 
 Write SQL in Markdown. Treat it as a first-class asset.
 
-sql-registry is a lightweight library for managing SQL as a structured Markdown registry, with safe parameter binding and minimal, controlled dynamic composition.
+👉 Turn existing SQL into structured Markdown with AI, then keep it maintainable as your system evolves.
 
-👉 Define SQL, parameters, types, descriptions, and conditional logic in one place.
+sql-registry is a lightweight library for managing SQL in structured Markdown, with safe parameter binding and minimal, controlled dynamic SQL.
+
+Define SQL, parameters, types, descriptions, and conditional logic in one place — and keep it readable and reviewable.
 
 ---
 
