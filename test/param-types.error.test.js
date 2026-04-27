@@ -232,6 +232,40 @@ test("SqlRegistry rejects builder bound params unless declared or internally gen
   );
 });
 
+test("SqlRegistry rejects builder script parse errors on loadFile", async () => {
+  const fixtureDir = path.join(__dirname, ".tmp");
+  fs.mkdirSync(fixtureDir, { recursive: true });
+
+  const fixturePath = path.join(fixtureDir, "registry-builder-parse-error.md");
+  fs.writeFileSync(
+    fixturePath,
+    [
+      "## users.search",
+      "",
+      "```sql",
+      "SELECT * FROM users /*#where*/",
+      "```",
+      "",
+      "```js builder",
+      "if (params.name) {",
+      "  append('where', 'AND name = :name', { name: params.name });",
+      "```",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+
+  const registry = new SqlRegistry();
+
+  assert.throws(
+    () => registry.loadFile(fixturePath),
+    error => {
+      assert.match(error.errors.join("\n"), /builder script parse error:/);
+      return true;
+    }
+  );
+});
+
 test("param type aliases are case-insensitive", async () => {
   assert.strictEqual(normalizeParamType("TIMESTAMP"), "date");
   assert.strictEqual(normalizeParamType("DateTime"), "date");

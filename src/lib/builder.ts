@@ -94,6 +94,29 @@ function assertSafeKey(key: string) {
   }
 }
 
+function validateAppendParams(sql: string, params: Record<string, unknown>, details: Record<string, unknown>) {
+  const sqlParamNames: string[] = extractNamedParams(sql);
+  const paramNames = Object.keys(params);
+  const missing = sqlParamNames.filter(name => !paramNames.includes(name));
+  const extra = paramNames.filter(name => !sqlParamNames.includes(name));
+
+  if (missing.length > 0) {
+    throw new SqlBuilderError(`append params missing for SQL params: ${missing.join(", ")}`, {
+      ...details,
+      missing,
+      allowed: sqlParamNames
+    });
+  }
+
+  if (extra.length > 0) {
+    throw new SqlBuilderError(`append params not used in SQL: ${extra.join(", ")}`, {
+      ...details,
+      extra,
+      allowed: sqlParamNames
+    });
+  }
+}
+
 function createPlainObject() {
   return Object.create(null);
 }
@@ -653,6 +676,10 @@ export class SqlBuilder {
 
   appendTo(slotName: string, sql: string, params: Record<string, unknown> = {}) {
     this.assertKnownSlot(slotName);
+    validateAppendParams(sql, params, {
+      queryName: this.queryName,
+      slotName
+    });
 
     if (!this.slots[slotName]) {
       this.slots[slotName] = [];

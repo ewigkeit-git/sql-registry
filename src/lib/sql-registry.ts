@@ -175,6 +175,10 @@ function validateEntry(name: string, entry: QueryEntry) {
   const dynamicallyBoundParamNames = new Set(builderMeta.boundParams);
   const internallyGeneratedParamNames = new Set(builderMeta.internalParams);
 
+  for (const error of builderMeta.errors) {
+    errors.push(`[${name}] ${error}`);
+  }
+
   const dupParams = findDuplicates(paramNames);
   if (dupParams.length > 0) {
     errors.push(`[${name}] duplicate params in meta: ${dupParams.join(", ")}`);
@@ -248,21 +252,23 @@ function extractBuilderScriptMeta(code: string) {
     return {
       inputParams: [],
       boundParams: [],
-      internalParams: []
+      internalParams: [],
+      errors: []
     };
   }
 
   let ast;
   try {
-    ast = acorn.parse(transpileBuilderScript(code), {
+    ast = acorn.parse(transpileBuilderScript(code, { throwOnDiagnostics: true }), {
       ecmaVersion: 2020,
       sourceType: "script"
     });
-  } catch {
+  } catch (err: unknown) {
     return {
       inputParams: [],
       boundParams: [],
-      internalParams: []
+      internalParams: [],
+      errors: [`builder script parse error: ${getErrorMessage(err)}`]
     };
   }
 
@@ -330,7 +336,8 @@ function extractBuilderScriptMeta(code: string) {
   return {
     inputParams: [...inputParams],
     boundParams: [...boundParams],
-    internalParams: [...internalParams]
+    internalParams: [...internalParams],
+    errors: []
   };
 }
 

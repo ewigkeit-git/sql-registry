@@ -535,6 +535,40 @@ test("SqlBuilder appendQuery accepts params used by fragment", async () => {
   });
 });
 
+test("SqlBuilder append rejects missing params used by SQL", async () => {
+  const builder = new SqlBuilder(
+    null,
+    "users.search",
+    "SELECT * FROM users /*#where*/"
+  );
+
+  assert.throws(
+    () => builder.append("where", "WHERE id = :id"),
+    error => {
+      assert.ok(error instanceof SqlBuilderError);
+      assert.match(error.message, /append params missing for SQL params: id/);
+      return true;
+    }
+  );
+});
+
+test("SqlBuilder append rejects params not used by SQL", async () => {
+  const builder = new SqlBuilder(
+    null,
+    "users.search",
+    "SELECT * FROM users /*#where*/"
+  );
+
+  assert.throws(
+    () => builder.append("where", "WHERE active = 1", { active: true }),
+    error => {
+      assert.ok(error instanceof SqlBuilderError);
+      assert.match(error.message, /append params not used in SQL: active/);
+      return true;
+    }
+  );
+});
+
 test("SqlBuilder rejects appends to undefined slots immediately", async () => {
   const builder = new SqlBuilder(
     null,
@@ -641,6 +675,23 @@ test("SqlBuilder set joins fragments with commas", async () => {
     sql: "UPDATE users SET name = ?,\nstatus = ? WHERE id = ?",
     values: ["Alice", "active", 1]
   });
+});
+
+test("SqlBuilder set validates params against SQL fragment", async () => {
+  const builder = new SqlBuilder(
+    null,
+    "users.update",
+    "UPDATE users SET /*#set*/ WHERE id = :id"
+  );
+
+  assert.throws(
+    () => builder.set("name = :name", { displayName: "Alice" }),
+    error => {
+      assert.ok(error instanceof SqlBuilderError);
+      assert.match(error.message, /append params missing for SQL params: name/);
+      return true;
+    }
+  );
 });
 
 test("runBuilderScript allows one nested if", async () => {
