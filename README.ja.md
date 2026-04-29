@@ -353,7 +353,6 @@ SELECT
   u.name,
   u.active
 FROM users u
-WHERE 1 = 1
 /*#where*/
 ```
 
@@ -401,8 +400,7 @@ SELECT
   u.name,
   u.active
 FROM users u
-WHERE 1 = 1
-AND u.deleted = 0
+WHERE u.deleted = 0
 AND u.active = ?
 AND u.name LIKE ?
 ```

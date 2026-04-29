@@ -202,7 +202,7 @@ test("runBuilderScript supports a whitelisted builder subset", async () => {
   );
 
   assert.deepStrictEqual(builder.build(), {
-    sql: "SELECT * FROM users AND active = ? ORDER BY users.created_at DESC LIMIT ?\nOFFSET ?",
+    sql: "SELECT * FROM users WHERE active = ? ORDER BY users.created_at DESC LIMIT ?\nOFFSET ?",
     values: [true, 10, 20]
   });
 });
@@ -478,6 +478,53 @@ test("SqlBuilder appendQuery accepts omitted params", async () => {
   assert.deepStrictEqual(builder.build(), {
     sql: "SELECT * FROM users WHERE 1 = 1 AND deleted = 0",
     values: []
+  });
+});
+
+test("SqlBuilder where slot starts a WHERE clause from leading AND fragments", async () => {
+  const builder = new SqlBuilder(
+    null,
+    "users.search",
+    "SELECT * FROM users /*#where*/"
+  );
+
+  builder
+    .append("where", "AND active = :active", { active: true })
+    .append("where", "AND status = :status", { status: "open" });
+
+  assert.deepStrictEqual(builder.build(), {
+    sql: "SELECT * FROM users WHERE active = ?\nAND status = ?",
+    values: [true, "open"]
+  });
+});
+
+test("SqlBuilder where slot preserves fragments when a top-level WHERE already exists", async () => {
+  const builder = new SqlBuilder(
+    null,
+    "users.search",
+    "SELECT * FROM users WHERE deleted = 0 /*#where*/"
+  );
+
+  builder.append("where", "AND active = :active", { active: true });
+
+  assert.deepStrictEqual(builder.build(), {
+    sql: "SELECT * FROM users WHERE deleted = 0 AND active = ?",
+    values: [true]
+  });
+});
+
+test("SqlBuilder where slot ignores WHERE inside subqueries before the marker", async () => {
+  const builder = new SqlBuilder(
+    null,
+    "users.search",
+    "SELECT * FROM (SELECT * FROM users WHERE deleted = 0) u /*#where*/"
+  );
+
+  builder.append("where", "AND active = :active", { active: true });
+
+  assert.deepStrictEqual(builder.build(), {
+    sql: "SELECT * FROM (SELECT * FROM users WHERE deleted = 0) u WHERE active = ?",
+    values: [true]
   });
 });
 
@@ -1064,7 +1111,6 @@ test("SqlRegistry loads image query markdown used by another app", async () => {
       "FROM images i",
       "LEFT JOIN subject_master sm",
       "  ON sm.id = i.primary_subject",
-      "WHERE 1 = 1",
       "/*#where*/",
       "ORDER BY i.shot_at DESC",
       "LIMIT :limitNum",
@@ -1183,8 +1229,7 @@ test("SqlRegistry loads image query markdown used by another app", async () => {
         "FROM images i",
         "LEFT JOIN subject_master sm",
         "  ON sm.id = i.primary_subject",
-        "WHERE 1 = 1",
-        "AND i.state = ?",
+        "WHERE i.state = ?",
         "AND EXISTS (",
         "SELECT 1",
         "FROM image_subjects ims",
@@ -1266,7 +1311,7 @@ test("SqlRegistry supports TypeScript builder blocks", async () => {
       "param: active:boolean - Active flag",
       "",
       "```sql",
-      "SELECT * FROM users WHERE 1 = 1 /*#where*/",
+      "SELECT * FROM users /*#where*/",
       "```",
       "",
       "```ts builder",
@@ -1290,7 +1335,7 @@ test("SqlRegistry supports TypeScript builder blocks", async () => {
       }
     }).build(),
     {
-      sql: "SELECT * FROM users WHERE 1 = 1 AND active = ?",
+      sql: "SELECT * FROM users WHERE active = ?",
       values: [true]
     }
   );
@@ -1324,7 +1369,6 @@ test("SqlRegistry executes markdown-built SQL against node:sqlite", async () => 
       "  name,",
       "  active",
       "FROM users",
-      "WHERE 1 = 1",
       "/*#where*/",
       "/*#order*/",
       "/*#paging*/",

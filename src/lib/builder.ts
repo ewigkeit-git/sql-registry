@@ -288,6 +288,110 @@ function extractSlotNames(sql: string): Set<string> {
   return names;
 }
 
+function hasTopLevelWhere(sql: string) {
+  let depth = 0;
+  let quote: "'" | "\"" | "`" | null = null;
+  let dollarQuote: string | null = null;
+  let lineComment = false;
+  let blockComment = false;
+
+  for (let i = 0; i < sql.length; i++) {
+    const char = sql[i];
+    const next = sql[i + 1];
+
+    if (lineComment) {
+      if (char === "\n" || char === "\r") lineComment = false;
+      continue;
+    }
+
+    if (blockComment) {
+      if (char === "*" && next === "/") {
+        blockComment = false;
+        i++;
+      }
+      continue;
+    }
+
+    if (dollarQuote) {
+      if (sql.startsWith(dollarQuote, i)) {
+        i += dollarQuote.length - 1;
+        dollarQuote = null;
+      }
+      continue;
+    }
+
+    if (quote) {
+      if (char === quote) {
+        if (quote === "'" && next === "'") {
+          i++;
+        } else {
+          quote = null;
+        }
+      }
+      continue;
+    }
+
+    if (char === "-" && next === "-") {
+      lineComment = true;
+      i++;
+      continue;
+    }
+
+    if (char === "/" && next === "*") {
+      blockComment = true;
+      i++;
+      continue;
+    }
+
+    if (char === "'" || char === "\"" || char === "`") {
+      quote = char;
+      continue;
+    }
+
+    if (char === "$") {
+      const match = sql.slice(i).match(/^\$[A-Za-z_][A-Za-z0-9_]*\$|^\$\$/);
+      if (match) {
+        dollarQuote = match[0];
+        i += match[0].length - 1;
+        continue;
+      }
+    }
+
+    if (char === "(") {
+      depth++;
+      continue;
+    }
+
+    if (char === ")") {
+      depth = Math.max(0, depth - 1);
+      continue;
+    }
+
+    if (depth === 0 && /\bwhere\b/i.test(sql.slice(i, i + 5))) {
+      const before = i === 0 ? "" : sql[i - 1];
+      const after = sql[i + 5] || "";
+      if (!/[A-Za-z0-9_]/.test(before) && !/[A-Za-z0-9_]/.test(after)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+function renderSlot(slotName: string, fragments: string[], baseSql: string, markerOffset: number, joiner: string) {
+  if (slotName !== "where" || fragments.length === 0 || hasTopLevelWhere(baseSql.slice(0, markerOffset))) {
+    return fragments.join(joiner);
+  }
+
+  const [first, ...rest] = fragments;
+  const normalizedFirst = /^where\b/i.test(first)
+    ? first
+    : `WHERE ${first.replace(/^(?:and|or)\b\s*/i, "")}`;
+
+  return [normalizedFirst, ...rest].join(joiner);
+}
+
 function normalizeNonNegativeInteger(name: string, value: unknown, max: number) {
   const numberValue = typeof value === "string" && value.trim() !== ""
     ? Number(value)
@@ -790,9 +894,15 @@ export class SqlBuilder {
 
     const sql = this.baseSql.replace(
       /\/\*#([A-Za-z_][A-Za-z0-9_.-]*)\*\//g,
-      (_, slotName) => {
+      (_match, slotName, markerOffset) => {
         usedSlots.add(slotName);
-        return (this.slots[slotName] || []).join(this.slotJoiners[slotName] || "\n");
+        return renderSlot(
+          slotName,
+          this.slots[slotName] || [],
+          this.baseSql,
+          markerOffset,
+          this.slotJoiners[slotName] || "\n"
+        );
       }
     );
 

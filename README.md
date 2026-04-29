@@ -171,6 +171,7 @@ Use ORM for simple CRUD, and sql-registry for:
 - SQLite / PostgreSQL / MySQL dialect support
 - Safe named parameter binding (`:id`)
 - Controlled dynamic SQL via builder
+- `where` slots can start from `AND ...` fragments without `WHERE 1 = 1`
 - `ORDER BY` allowlist
 - limit / offset validation
 - SQL fragment reuse via `appendQuery`
