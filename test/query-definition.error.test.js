@@ -147,6 +147,141 @@ test("SqlRegistry validation errors include file line query and dialect context"
   );
 });
 
+test("SqlRegistry rejects fenced blocks outside query definitions", async () => {
+  const fixturePath = path.join(__dirname, ".tmp", "registry-fence-outside-query.md");
+  writeFixture(fixturePath, [
+    "```sql",
+    "SELECT 1",
+    "```",
+    "",
+    "## users.find",
+    "",
+    "```sql",
+    "SELECT 2",
+    "```",
+    ""
+  ]);
+
+  const registry = new SqlRegistry();
+
+  assert.throws(
+    () => registry.loadFile(fixturePath),
+    error => {
+      assert.match(error.errors.join("\n"), /registry-fence-outside-query\.md:1: fenced block outside query/);
+      return true;
+    }
+  );
+});
+
+test("SqlRegistry rejects unclosed fenced blocks outside query definitions", async () => {
+  const fixturePath = path.join(__dirname, ".tmp", "registry-unclosed-fence-outside-query.md");
+  writeFixture(fixturePath, [
+    "```sql",
+    "SELECT 1",
+    ""
+  ]);
+
+  const registry = new SqlRegistry();
+
+  assert.throws(
+    () => registry.loadFile(fixturePath),
+    error => {
+      const messages = error.errors.join("\n");
+      assert.match(messages, /registry-unclosed-fence-outside-query\.md:1: fenced block outside query/);
+      assert.match(messages, /registry-unclosed-fence-outside-query\.md:1: unclosed fenced block outside query/);
+      return true;
+    }
+  );
+});
+
+test("SqlRegistry rejects unsupported fenced block languages", async () => {
+  const fixturePath = path.join(__dirname, ".tmp", "registry-unsupported-fence-language.md");
+  writeFixture(fixturePath, [
+    "## users.find",
+    "",
+    "```md",
+    "not registry content",
+    "```",
+    ""
+  ]);
+
+  const registry = new SqlRegistry();
+
+  assert.throws(
+    () => registry.loadFile(fixturePath),
+    error => {
+      assert.match(error.errors.join("\n"), /registry-unsupported-fence-language\.md:3: \[users\.find\] unsupported fenced block info: md/);
+      return true;
+    }
+  );
+});
+
+test("SqlRegistry rejects empty fenced block info inside query definitions", async () => {
+  const fixturePath = path.join(__dirname, ".tmp", "registry-empty-fence-info.md");
+  writeFixture(fixturePath, [
+    "## users.find",
+    "",
+    "```",
+    "SELECT 1",
+    "```",
+    ""
+  ]);
+
+  const registry = new SqlRegistry();
+
+  assert.throws(
+    () => registry.loadFile(fixturePath),
+    error => {
+      assert.match(error.errors.join("\n"), /registry-empty-fence-info\.md:3: \[users\.find\] unsupported fenced block info: \(empty\)/);
+      return true;
+    }
+  );
+});
+
+test("SqlRegistry rejects malformed SQL fenced block info", async () => {
+  const fixturePath = path.join(__dirname, ".tmp", "registry-malformed-sql-fence-info.md");
+  writeFixture(fixturePath, [
+    "## users.find",
+    "",
+    "```sql pg extra",
+    "SELECT 1",
+    "```",
+    ""
+  ]);
+
+  const registry = new SqlRegistry();
+
+  assert.throws(
+    () => registry.loadFile(fixturePath),
+    error => {
+      assert.match(error.errors.join("\n"), /registry-malformed-sql-fence-info\.md:3: \[users\.find\] invalid sql fenced block info: sql pg extra/);
+      return true;
+    }
+  );
+});
+
+test("SqlRegistry reports unsupported SQL fenced block dialects as validation errors", async () => {
+  const fixturePath = path.join(__dirname, ".tmp", "registry-unsupported-sql-fence-dialect.md");
+  writeFixture(fixturePath, [
+    "## users.find",
+    "",
+    "```sql oracle",
+    "SELECT 1",
+    "```",
+    ""
+  ]);
+
+  const registry = new SqlRegistry();
+
+  assert.throws(
+    () => registry.loadFile(fixturePath),
+    error => {
+      assert.match(error.errors.join("\n"), /registry-unsupported-sql-fence-dialect\.md:3: \[users\.find\] unsupported dialect: oracle/);
+      return true;
+    }
+  );
+});
+
 test("SqlRegistry accepts query ids made from letters digits underscore dot and hyphen", async () => {
   const fixturePath = path.join(__dirname, ".tmp", "registry-valid-query-id.md");
   writeFixture(fixturePath, [
@@ -615,6 +750,79 @@ test("SqlRegistry accepts adjacent namespaced imports in nested imports", async 
   assert.ok(registry.has("app.subjects.find"));
 });
 
+test("SqlRegistry does not expand import directives inside fenced SQL blocks", async () => {
+  const fixtureDir = path.join(__dirname, ".tmp", "registry-import-in-fenced-sql");
+  const rootPath = path.join(fixtureDir, "root.md");
+  const childPath = path.join(fixtureDir, "child.md");
+
+  writeFixture(rootPath, [
+    '@import "./child.md" as child',
+    ""
+  ]);
+  writeFixture(childPath, [
+    "## literal",
+    "",
+    "```sql",
+    '@import "./missing.md" as missing',
+    "## not.a.query",
+    "SELECT 1",
+    "```",
+    ""
+  ]);
+
+  const registry = new SqlRegistry();
+
+  registry.loadFile(rootPath);
+  assert.ok(registry.has("child.literal"));
+  assert.strictEqual(registry.getSql("child.literal"), [
+    '@import "./missing.md" as missing',
+    "## not.a.query",
+    "SELECT 1"
+  ].join("\n"));
+});
+
+test("SqlRegistry ignores multiline HTML comments in query metadata", async () => {
+  const fixturePath = path.join(__dirname, ".tmp", "registry-multiline-html-comment.md");
+  writeFixture(fixturePath, [
+    "## users.find",
+    "",
+    "<!--",
+    "note: this is a markdown comment",
+    "-->",
+    "",
+    "```sql",
+    "SELECT 1",
+    "```",
+    ""
+  ]);
+
+  const registry = new SqlRegistry();
+
+  registry.loadFile(fixturePath);
+  assert.ok(registry.has("users.find"));
+});
+
+test("SqlRegistry rejects unclosed multiline HTML comments in query metadata", async () => {
+  const fixturePath = path.join(__dirname, ".tmp", "registry-unclosed-html-comment.md");
+  writeFixture(fixturePath, [
+    "## users.find",
+    "",
+    "<!--",
+    "note: this is a markdown comment",
+    ""
+  ]);
+
+  const registry = new SqlRegistry();
+
+  assert.throws(
+    () => registry.loadFile(fixturePath),
+    error => {
+      assert.match(error.errors.join("\n"), /registry-unclosed-html-comment\.md:3: \[users\.find\] unclosed HTML comment/);
+      return true;
+    }
+  );
+});
+
 test("SqlRegistry preserves heading descriptions while applying import namespace", async () => {
   const fixtureDir = path.join(__dirname, ".tmp", "registry-import-heading-description");
   const rootPath = path.join(fixtureDir, "root.md");
@@ -626,6 +834,33 @@ test("SqlRegistry preserves heading descriptions while applying import namespace
   ]);
   writeFixture(childPath, [
     "## active - Active user fragment",
+    "",
+    "```sql",
+    "SELECT 1",
+    "```",
+    ""
+  ]);
+
+  const registry = new SqlRegistry();
+
+  registry.loadFile(rootPath);
+  assert.ok(registry.has("fragments.user.active"));
+  assert.strictEqual(registry.getMeta("fragments.user.active").description, "Active user fragment");
+});
+
+test("SqlRegistry preserves explicit descriptions while applying import namespace", async () => {
+  const fixtureDir = path.join(__dirname, ".tmp", "registry-import-explicit-description");
+  const rootPath = path.join(fixtureDir, "root.md");
+  const childPath = path.join(fixtureDir, "child.md");
+
+  writeFixture(rootPath, [
+    '@import "./child.md" as fragments.user',
+    ""
+  ]);
+  writeFixture(childPath, [
+    "## active",
+    "",
+    "description: Active user fragment",
     "",
     "```sql",
     "SELECT 1",

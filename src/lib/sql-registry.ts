@@ -149,17 +149,29 @@ function parseParamMeta(value: string): ParamMeta {
   return meta;
 }
 
-function parseSqlInfo(info: string) {
+function parseSqlInfo(info: string): { dialect: string | null; error?: string } {
   const parts = String(info || "").trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0 || parts[0] !== "sql") return null;
-  if (!parts[1] || parts[1] === "default") return "default";
-  return normalizeDialect(parts[1]);
+  if (parts.length === 0 || parts[0] !== "sql") return { dialect: null };
+  if (parts.length > 2) {
+    return { dialect: null, error: `invalid sql fenced block info: ${info}` };
+  }
+  if (!parts[1] || parts[1] === "default") return { dialect: "default" };
+
+  try {
+    return { dialect: normalizeDialect(parts[1]) };
+  } catch (err: unknown) {
+    return { dialect: null, error: getErrorMessage(err) };
+  }
 }
 
 function parseBuilderInfo(info: string) {
   const parts = String(info || "").trim().split(/\s+/).filter(Boolean);
   if (parts.length !== 2) return false;
-  return ["js", "javascript", "ts", "typescript"].includes(parts[0]) && parts[1] === "builder";
+  return ["js", "ts"].includes(parts[0]) && parts[1] === "builder";
+}
+
+function formatFenceInfo(info: string) {
+  return info ? info : "(empty)";
 }
 
 function stripMarkdownListMarker(text: string) {
@@ -211,6 +223,10 @@ function applyNamespaceToHeadingLine(line: string, namespacePrefix: string) {
     if (!heading.name) return `## ${heading.name}`;
     return `## ${formatQueryHeading(`${namespacePrefix}.${heading.name}`, heading.description)}`;
   });
+}
+
+function isFenceDelimiter(line: string) {
+  return /^```/.test(line);
 }
 
 function validateEntry(name: string, entry: QueryEntry, source?: QuerySourceInfo) {
@@ -504,9 +520,21 @@ export function resolveImports(
   const src = fs.readFileSync(fullPath, "utf-8").replace(/^\uFEFF/, "");
   const dir = path.dirname(fullPath);
   const lines = src.split(/\r?\n/);
-  const out = [];
+  const out: string[] = [];
+  let inFence = false;
 
   for (const line of lines) {
+    if (isFenceDelimiter(line)) {
+      inFence = !inFence;
+      out.push(line);
+      continue;
+    }
+
+    if (inFence) {
+      out.push(line);
+      continue;
+    }
+
     const parsed = parseImportDirective(line);
 
     if (!parsed) {
@@ -621,9 +649,28 @@ export function parseMarkdownFile(filePath: string): ParseMarkdownResult {
       continue;
     }
 
-    if (!currentName) continue;
+    if (!currentName) {
+      if (isFenceDelimiter(line)) {
+        const fenceLine = i + 1;
+        let closed = false;
 
-    const fenceMatch = line.match(/^```(.*)$/);
+        while (++i < lines.length) {
+          if (isFenceDelimiter(lines[i])) {
+            closed = true;
+            break;
+          }
+        }
+
+        errors.push(`${location(filePath, fenceLine)}: fenced block outside query`);
+        if (!closed) {
+          errors.push(`${location(filePath, fenceLine)}: unclosed fenced block outside query`);
+        }
+      }
+
+      continue;
+    }
+
+    const fenceMatch = isFenceDelimiter(line) ? line.match(/^```(.*)$/) : null;
     if (fenceMatch) {
       const fenceLine = i + 1;
       const info = fenceMatch[1].trim();
@@ -644,8 +691,14 @@ export function parseMarkdownFile(filePath: string): ParseMarkdownResult {
       }
 
       const content = contentLines.join("\n").trim();
-      const dialect = parseSqlInfo(info);
-      if (dialect) {
+      const sqlInfo = parseSqlInfo(info);
+      if (sqlInfo.error) {
+        errors.push(`${location(filePath, fenceLine)}: [${currentName}] ${sqlInfo.error}`);
+        continue;
+      }
+
+      if (sqlInfo.dialect) {
+        const dialect = sqlInfo.dialect;
         if (currentSql[dialect]) {
           errors.push(`${location(filePath, fenceLine)}: [${currentName}][${dialect}] duplicate sql block for dialect: ${dialect}`);
         } else {
@@ -662,14 +715,30 @@ export function parseMarkdownFile(filePath: string): ParseMarkdownResult {
           currentMeta.builder = content;
           currentBuilderLine = fenceLine;
         }
+        continue;
       }
 
+      errors.push(`${location(filePath, fenceLine)}: [${currentName}] unsupported fenced block info: ${formatFenceInfo(info)}`);
       continue;
     }
 
     const text = stripMarkdownListMarker(line.trim());
     if (!text) continue;
-    if (/^<!--.*-->$/.test(text)) continue;
+    if (text.startsWith("<!--")) {
+      const commentLine = i + 1;
+      let closed = text.includes("-->");
+      while (!text.includes("-->") && i + 1 < lines.length) {
+        i++;
+        if (lines[i].includes("-->")) {
+          closed = true;
+          break;
+        }
+      }
+      if (!closed) {
+        errors.push(`${location(filePath, commentLine)}: [${currentName}] unclosed HTML comment`);
+      }
+      continue;
+    }
 
     if (text === "orderable:") {
       if ("orderable" in currentMeta) {
