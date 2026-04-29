@@ -182,6 +182,22 @@ Use ORM for simple CRUD, and sql-registry for:
 
 ---
 
+## Adapter Usage
+
+Adapters do not begin, commit, or roll back transactions. Manage transactions in your driver or ORM, then pass the transaction-bound executor/connection to the adapter.
+
+| Target | Adapter | Normal use | Transaction use |
+| --- | --- | --- | --- |
+| better-sqlite3 | `BetterSqlite3Adapter` | `new BetterSqlite3Adapter(db, registry)` | Run adapter calls inside `db.transaction(...)` on the same `db`. |
+| node:sqlite | `NodeSqliteAdapter` | `new NodeSqliteAdapter(db, registry)` | Manage `BEGIN` / `COMMIT` / `ROLLBACK` on the same `DatabaseSync`. |
+| node-postgres | `PgAdapter` | `new PgAdapter(poolOrClient, registry)` | Pass the checked-out transaction `client`: `adapter.query(client, "users.search", { params })`. |
+| mysql2 | `Mysql2Adapter` | `new Mysql2Adapter(poolOrConnection, registry)` | Pass the transaction `connection`: `adapter.query(connection, "users.search", { params })`. |
+| MariaDB | `MariadbAdapter` | `new MariadbAdapter(poolOrConnection, registry)` | Pass the transaction `connection`: `adapter.query(connection, "users.search", { params })`. |
+| Sequelize | `SequelizeAdapter` | `new SequelizeAdapter(sequelize, registry)` | Pass `queryOptions.transaction`: `adapter.query("users.search", { params, queryOptions: { transaction } })`. |
+| TypeORM | `TypeOrmAdapter` | `new TypeOrmAdapter(dataSource, registry)` | Pass the transaction `manager` or `queryRunner`: `adapter.query(manager, "users.search", { params })`. |
+
+---
+
 ## Status
 
 This project is **pre-1.0**.
