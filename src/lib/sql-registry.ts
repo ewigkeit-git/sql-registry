@@ -4,7 +4,7 @@ const acorn = require("acorn");
 import { extractNamedParams } from "./param-parser";
 import { normalizeDialect } from "./dialect";
 import { bindSql } from "./binder";
-import { SqlBuilder, SqlBuilderError } from "./builder";
+import { BuilderScriptProgram, compileBuilderScript, extractSlotNames, SqlBuilder, SqlBuilderError } from "./builder";
 import { transpileBuilderScript } from "./builder-script";
 import {
   buildParamTypeMap,
@@ -13,6 +13,7 @@ import {
 } from "./param-types";
 
 const QUERY_ID_PATTERN = /^[A-Za-z0-9_.-]+$/;
+const STATIC_SLOT_MARKER_PATTERN = /\/\*#[A-Za-z_][A-Za-z0-9_.-]*(?:\s+-\s*.*?)?\*\//s;
 
 export type ParamMeta = {
   name: string;
@@ -77,6 +78,17 @@ export type BuilderOptions = {
   maxOffset?: number;
 };
 
+type QueryRuntimeCache = {
+  entry: QueryEntry;
+  sql: string;
+  builderScript?: string;
+  params: ParamMeta[];
+  paramTypes: Record<string, string>;
+  baseParamNames: string[];
+  allowedSlots: Set<string>;
+  builderProgram: BuilderScriptProgram | null;
+};
+
 type AstNode = {
   type: string;
   [key: string]: unknown;
@@ -84,6 +96,22 @@ type AstNode = {
 
 function getErrorMessage(err: unknown) {
   return err instanceof Error ? err.message : String(err);
+}
+
+function compileQueryBuilderProgram(name: string, code?: string) {
+  if (!code) return null;
+
+  try {
+    return compileBuilderScript(code);
+  } catch (err: unknown) {
+    if (err instanceof SqlBuilderError) {
+      throw err;
+    }
+
+    throw new SqlBuilderError(`failed to run builder script: ${getErrorMessage(err)}`, {
+      queryName: name
+    });
+  }
 }
 
 function location(filePath: string, line?: number) {
@@ -841,12 +869,14 @@ export class SqlRegistry {
   dialect: string;
   queries: Record<string, QueryEntry>;
   files: string[];
+  private runtimeCache: Map<string, QueryRuntimeCache>;
 
   constructor(options: SqlRegistryOptions = {}) {
     this.strict = options.strict !== false;
     this.dialect = normalizeDialect(options.dialect);
     this.queries = {};
     this.files = [];
+    this.runtimeCache = new Map();
   }
 
   loadFile(filePath: string) {
@@ -869,6 +899,8 @@ export class SqlRegistry {
       }
       this.queries[name] = entry;
     }
+
+    this.runtimeCache.clear();
 
     for (const file of result.files || [path.resolve(filePath)]) {
       if (!this.files.includes(file)) {
@@ -914,13 +946,50 @@ export class SqlRegistry {
     return sql;
   }
 
+  isStatic(name: string) {
+    const entry = this.get(name);
+    if (entry.meta.builder) return false;
+    return !STATIC_SLOT_MARKER_PATTERN.test(this.getSql(name));
+  }
+
+  private getRuntime(name: string) {
+    const entry = this.get(name);
+    const sql = this.getSql(name);
+    const key = `${name}\0${this.dialect}`;
+    const cached = this.runtimeCache.get(key);
+
+    if (
+      cached &&
+      cached.entry === entry &&
+      cached.sql === sql &&
+      cached.builderScript === entry.meta.builder &&
+      cached.params === entry.meta.params
+    ) {
+      return cached;
+    }
+
+    const runtime: QueryRuntimeCache = {
+      entry,
+      sql,
+      builderScript: entry.meta.builder,
+      params: entry.meta.params,
+      paramTypes: buildParamTypeMap(entry.meta.params),
+      baseParamNames: extractNamedParams(sql),
+      allowedSlots: extractSlotNames(sql),
+      builderProgram: compileQueryBuilderProgram(name, entry.meta.builder)
+    };
+
+    this.runtimeCache.set(key, runtime);
+    return runtime;
+  }
+
   bind(name: string, params: Record<string, unknown> = {}, options: BindOptions = {}) {
     const entry = this.get(name);
-    validateParamTypes(params, buildParamTypeMap(entry.meta.params), {
+    const runtime = this.getRuntime(name);
+    validateParamTypes(params, runtime.paramTypes, {
       queryName: name
     });
-    const sql = this.getSql(name);
-    return bindSql(sql, params, {
+    return bindSql(runtime.sql, params, {
       dialect: this.dialect,
       queryName: name,
       ...options
@@ -929,25 +998,26 @@ export class SqlRegistry {
 
   builder(name: string, options: BuilderOptions = {}) {
     const entry = this.get(name);
-    const sql = this.getSql(name);
-    const paramTypes = buildParamTypeMap(entry.meta.params);
-    validateParamTypes(options.params || {}, paramTypes, {
+    const runtime = this.getRuntime(name);
+    validateParamTypes(options.params || {}, runtime.paramTypes, {
       queryName: name
     });
     const orderable = {
       ...(entry.meta.orderable || {}),
       ...(options.orderable || {})
     };
-    const builder = new SqlBuilder(this, name, sql, {
+    const builder = new SqlBuilder(this, name, runtime.sql, {
       ...options,
       dialect: options.dialect || this.dialect,
       orderable,
-      paramTypes
+      paramTypes: runtime.paramTypes,
+      allowedSlots: runtime.allowedSlots,
+      baseParamNames: runtime.baseParamNames
     });
     const baseParams: Record<string, unknown> = {};
     const inputParams = options.params || {};
 
-    for (const paramName of extractNamedParams(sql)) {
+    for (const paramName of runtime.baseParamNames) {
       if (Object.prototype.hasOwnProperty.call(inputParams, paramName)) {
         baseParams[paramName] = inputParams[paramName];
       }
@@ -956,7 +1026,7 @@ export class SqlRegistry {
     builder.addParams(baseParams);
 
     if (entry.meta.builder && options.runScript !== false) {
-      builder.runBuilderScript(entry.meta.builder, {
+      builder.runCompiledBuilderScript(runtime.builderProgram, {
         params: inputParams,
         context: options.context || {}
       });

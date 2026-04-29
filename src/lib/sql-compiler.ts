@@ -8,14 +8,18 @@ export type CompileSqlOptions = {
   placeholder?: "question" | "numbered";
 };
 
-export function compileSql(
+export type CompiledSqlTemplate = {
+  sql: string;
+  paramNames: string[];
+};
+
+export function compileSqlTemplate(
   sql: string,
   tokens: NamedParamToken[],
-  params: Record<string, unknown> = {},
   options: CompileSqlOptions = {}
-) {
-  const values: unknown[] = [];
+): CompiledSqlTemplate {
   const parts: string[] = [];
+  const paramNames: string[] = [];
   let lastIndex = 0;
   const placeholder = options.placeholder || "question";
   const numberedParamIndexes = new Map<string, number>();
@@ -32,12 +36,12 @@ export function compileSql(
       if (paramIndex === undefined) {
         paramIndex = numberedParamIndexes.size + 1;
         numberedParamIndexes.set(token.name, paramIndex);
-        values.push(params[token.name]);
+        paramNames.push(token.name);
       }
       parts.push(`$${paramIndex}`);
     } else {
       parts.push("?");
-      values.push(params[token.name]);
+      paramNames.push(token.name);
     }
 
     lastIndex = token.end;
@@ -47,6 +51,30 @@ export function compileSql(
 
   return {
     sql: parts.join(""),
-    values
+    paramNames
+  };
+}
+
+export function applyCompiledSqlTemplate(
+  template: CompiledSqlTemplate,
+  params: Record<string, unknown> = {}
+) {
+  return {
+    sql: template.sql,
+    values: template.paramNames.map(name => params[name])
+  };
+}
+
+export function compileSql(
+  sql: string,
+  tokens: NamedParamToken[],
+  params: Record<string, unknown> = {},
+  options: CompileSqlOptions = {}
+) {
+  const template = compileSqlTemplate(sql, tokens, options);
+
+  return {
+    sql: template.sql,
+    values: template.paramNames.map(name => params[name])
   };
 }

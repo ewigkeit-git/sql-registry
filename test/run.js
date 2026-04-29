@@ -190,6 +190,33 @@ test("bindSql reuses numbered placeholders for repeated pg params", async () => 
   });
 });
 
+test("SqlRegistryAdapter builds builderless static SQL through bind fast path", async () => {
+  const registry = new SqlRegistry({ strict: false, dialect: "pg" });
+  registry.queries["users.findById"] = {
+    meta: {
+      params: []
+    },
+    sql: {
+      default: "SELECT * FROM users WHERE id = :id"
+    }
+  };
+  registry.builder = () => {
+    throw new Error("unexpected builder call");
+  };
+
+  const adapter = new SqlRegistryAdapter(registry);
+
+  assert.deepStrictEqual(adapter.build("users.findById", {
+    params: {
+      id: 1,
+      unused: true
+    }
+  }), {
+    sql: "SELECT * FROM users WHERE id = $1",
+    values: [1]
+  });
+});
+
 test("bindSql rejects undefined bind values before compilation", async () => {
   assert.throws(
     () => bindSql("select :id as id", { id: undefined }),

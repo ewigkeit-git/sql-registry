@@ -1,6 +1,6 @@
 import { extractNamedParamTokens } from "./param-parser";
 import { SqlBindError, validateBindParams } from "./bind-validator";
-import { compileSql } from "./sql-compiler";
+import { applyCompiledSqlTemplate, compileSqlTemplate, CompiledSqlTemplate } from "./sql-compiler";
 import { getPlaceholderStyle, normalizeStatementDialect } from "./dialect";
 
 export type SqlStatement = {
@@ -14,18 +14,43 @@ export type BindSqlOptions = {
   queryName?: string;
 };
 
-export function bindSql(sql: string, params: Record<string, unknown> = {}, options: BindSqlOptions = {}): SqlStatement {
-  const tokens = extractNamedParamTokens(sql);
-  const names = [...new Set(tokens.map((token: { name: string }) => token.name))];
-  const dialect = normalizeStatementDialect(options.dialect);
+type CachedSqlTemplate = {
+  names: string[];
+  template: CompiledSqlTemplate;
+};
 
-  validateBindParams(sql, names, params, {
+const compiledSqlCache = new Map<string, CachedSqlTemplate>();
+
+function cacheKey(sql: string, dialect: string) {
+  return `${dialect}\0${sql}`;
+}
+
+function getCompiledSqlTemplate(sql: string, dialect: string): CachedSqlTemplate {
+  const key = cacheKey(sql, dialect);
+  const cached = compiledSqlCache.get(key);
+  if (cached) return cached;
+
+  const tokens = extractNamedParamTokens(sql);
+  const compiled = {
+    names: [...new Set(tokens.map((token: { name: string }) => token.name))],
+    template: compileSqlTemplate(sql, tokens, {
+      placeholder: getPlaceholderStyle(dialect)
+    })
+  };
+
+  compiledSqlCache.set(key, compiled);
+  return compiled;
+}
+
+export function bindSql(sql: string, params: Record<string, unknown> = {}, options: BindSqlOptions = {}): SqlStatement {
+  const dialect = normalizeStatementDialect(options.dialect);
+  const compiled = getCompiledSqlTemplate(sql, dialect);
+
+  validateBindParams(sql, compiled.names, params, {
     ...options,
     dialect
   });
-  return compileSql(sql, tokens, params, {
-    placeholder: getPlaceholderStyle(dialect)
-  });
+  return applyCompiledSqlTemplate(compiled.template, params);
 }
 
 export { SqlBindError };

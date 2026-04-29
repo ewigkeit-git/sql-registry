@@ -18,6 +18,7 @@ export type AdapterOptions = {
 
 export type SqlBuilderLike = {
   baseSql: string;
+  baseParamNames?: string[];
   addParams: (params: Record<string, unknown>) => SqlBuilderLike;
   build: (options?: Record<string, unknown>) => SqlStatement;
   buildExplain: (options?: Record<string, unknown>) => SqlStatement;
@@ -25,6 +26,8 @@ export type SqlBuilderLike = {
 
 export type SqlRegistryLike = {
   builder: (name: string, options?: AdapterOptions) => SqlBuilderLike;
+  bind?: (name: string, params?: Record<string, unknown>, options?: Record<string, unknown>) => SqlStatement;
+  isStatic?: (name: string) => boolean;
 };
 
 export class SqlRegistryAdapter {
@@ -49,7 +52,7 @@ export class SqlRegistryAdapter {
       }
     });
 
-    const sqlParamNames = extractNamedParams(builder.baseSql);
+    const sqlParamNames = builder.baseParamNames || extractNamedParams(builder.baseSql);
     const bindParams: Record<string, unknown> = {};
 
     for (const name of sqlParamNames) {
@@ -63,6 +66,13 @@ export class SqlRegistryAdapter {
   }
 
   build(name: string, options: AdapterOptions = {}) {
+    if (this.registry.isStatic?.(name) && this.registry.bind) {
+      return this.registry.bind(name, options.params || {}, {
+        ...(options.buildOptions || {}),
+        strict: false
+      });
+    }
+
     return this.createBuilder(name, options).build(options.buildOptions || {});
   }
 

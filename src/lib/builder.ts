@@ -53,6 +53,8 @@ export type SqlBuilderOptions = {
   maxLimit?: number;
   maxOffset?: number;
   paramTypes?: Record<string, string>;
+  allowedSlots?: Set<string> | string[];
+  baseParamNames?: string[];
 };
 
 export type BindOptions = {
@@ -74,6 +76,8 @@ type AstNode = {
   type: string;
   [key: string]: unknown;
 };
+
+export type BuilderScriptProgram = AstNode;
 
 type EvalEnv = Record<string, unknown>;
 
@@ -278,7 +282,7 @@ function validateBuilderCallArguments(node: AstNode) {
   }
 }
 
-function extractSlotNames(sql: string): Set<string> {
+export function extractSlotNames(sql: string): Set<string> {
   const names = new Set<string>();
   const regex = new RegExp(SLOT_MARKER_PATTERN);
   let match;
@@ -712,10 +716,27 @@ function executeAst(ast: AstNode, env: EvalEnv): void {
   }
 }
 
+export function compileBuilderScript(code: string): BuilderScriptProgram | null {
+  if (!code || !code.trim()) return null;
+  const runnableCode = transpileBuilderScript(code);
+  const ast = acorn.parse(runnableCode, {
+    ecmaVersion: 2020,
+    sourceType: "script"
+  });
+
+  if (countAstNodes(ast) > 1000) {
+    throw new SqlBuilderError("builder script is too large");
+  }
+
+  validateControlFlowDepth(ast);
+  return ast;
+}
+
 export class SqlBuilder {
   registry: SqlRegistryLike | null;
   queryName: string;
   baseSql: string;
+  baseParamNames: string[];
   params: Record<string, unknown>;
   slots: Record<string, string[]>;
   slotJoiners: Record<string, string>;
@@ -730,6 +751,7 @@ export class SqlBuilder {
     this.registry = registry;
     this.queryName = queryName;
     this.baseSql = baseSql;
+    this.baseParamNames = options.baseParamNames || extractNamedParams(baseSql);
 
     this.params = {};
     this.slots = {};
@@ -737,7 +759,9 @@ export class SqlBuilder {
 
     this.dialect = options.dialect || "sqlite";
     this.orderable = options.orderable || {};
-    this.allowedSlots = extractSlotNames(baseSql);
+    this.allowedSlots = options.allowedSlots instanceof Set
+      ? new Set(options.allowedSlots)
+      : new Set(options.allowedSlots || extractSlotNames(baseSql));
     this.maxLimit = options.maxLimit || 1000;
     this.maxOffset = options.maxOffset || 100000;
     this.paramTypes = options.paramTypes || {};
@@ -922,10 +946,8 @@ export class SqlBuilder {
     return sql.trim();
   }
 
-  runBuilderScript(code: string, input: BuilderScriptInput = {}) {
-    if (!code || !code.trim()) return this;
-    const runnableCode = transpileBuilderScript(code);
-
+  runCompiledBuilderScript(ast: BuilderScriptProgram | null, input: BuilderScriptInput = {}) {
+    if (!ast) return this;
     const params = input.params || {};
     const context = input.context || {};
     const env = {
@@ -971,16 +993,6 @@ export class SqlBuilder {
     };
 
     try {
-      const ast = acorn.parse(runnableCode, {
-        ecmaVersion: 2020,
-        sourceType: "script"
-      });
-
-      if (countAstNodes(ast) > 1000) {
-        throw new SqlBuilderError("builder script is too large");
-      }
-
-      validateControlFlowDepth(ast);
       executeAst(ast, env);
     } catch (err: unknown) {
       if (err instanceof SqlBuilderError) {
@@ -993,6 +1005,20 @@ export class SqlBuilder {
     }
 
     return this;
+  }
+
+  runBuilderScript(code: string, input: BuilderScriptInput = {}) {
+    try {
+      return this.runCompiledBuilderScript(compileBuilderScript(code), input);
+    } catch (err: unknown) {
+      if (err instanceof SqlBuilderError) {
+        throw err;
+      }
+
+      throw new SqlBuilderError(`failed to run builder script: ${getErrorMessage(err)}`, {
+        queryName: this.queryName
+      });
+    }
   }
 
   toSql() {

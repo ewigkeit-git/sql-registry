@@ -108,6 +108,7 @@ export class SqlRegistry {
   get(name: string): QueryEntry;
   getMeta(name: string): QueryMeta;
   getSql(name: string): string;
+  isStatic(name: string): boolean;
   bind(name: string, params?: Record<string, unknown>, options?: BindOptions): SqlStatement;
   builder(name: string, options?: BuilderOptions): SqlBuilder;
   list(): string[];
