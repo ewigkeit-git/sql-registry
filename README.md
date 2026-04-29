@@ -176,7 +176,7 @@ Use ORM for simple CRUD, and sql-registry for:
 - `ORDER BY` allowlist
 - limit / offset validation
 - SQL fragment reuse via `appendQuery`
-- Adapter support (better-sqlite3, node-postgres, MariaDB, Sequelize, TypeORM, etc.)
+- Adapter support (better-sqlite3, node-postgres, mysql2, MariaDB, Sequelize, TypeORM, etc.)
 - `EXPLAIN` query generation
 
 ---

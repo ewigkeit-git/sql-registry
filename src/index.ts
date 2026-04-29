@@ -10,6 +10,7 @@ export {
   SqlRegistryAdapter,
   BetterSqlite3Adapter,
   MariadbAdapter,
+  Mysql2Adapter,
   NodeSqliteAdapter,
   PgAdapter,
   SequelizeAdapter,

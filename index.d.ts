@@ -131,6 +131,7 @@ export class SqlRegistryAdapter {
 
 export class BetterSqlite3Adapter extends SqlRegistryAdapter {}
 export class MariadbAdapter extends SqlRegistryAdapter {}
+export class Mysql2Adapter extends SqlRegistryAdapter {}
 export class NodeSqliteAdapter extends SqlRegistryAdapter {}
 export class PgAdapter extends SqlRegistryAdapter {}
 export class SequelizeAdapter extends SqlRegistryAdapter {}

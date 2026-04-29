@@ -10,6 +10,7 @@ const {
   SqlRegistryAdapter,
   BetterSqlite3Adapter,
   MariadbAdapter,
+  Mysql2Adapter,
   NodeSqliteAdapter,
   PgAdapter,
   SequelizeAdapter,
@@ -2419,6 +2420,198 @@ test("MariadbAdapter owns sql and values query options", async () => {
       }
     }),
     /queryOptions\.sql and queryOptions\.values are managed by MariadbAdapter/
+  );
+});
+
+test("Mysql2Adapter queries by SQL ID using execute by default", async () => {
+  const registry = new SqlRegistry({ strict: false, dialect: "mysql" });
+  registry.queries["users.findActive"] = {
+    meta: {
+      params: []
+    },
+    sql: {
+      default: "SELECT * FROM users WHERE active = :active"
+    }
+  };
+
+  const calls = [];
+  const connection = {
+    execute(sql, values) {
+      calls.push({ sql, values });
+      return Promise.resolve([[{ id: 1, active: 1 }], []]);
+    }
+  };
+
+  const adapter = new Mysql2Adapter(connection, registry);
+  const result = await adapter.query("users.findActive", {
+    params: {
+      active: 1
+    }
+  });
+
+  assert.deepStrictEqual(result, [[{ id: 1, active: 1 }], []]);
+  assert.deepStrictEqual(calls, [
+    {
+      sql: "SELECT * FROM users WHERE active = ?",
+      values: [1]
+    }
+  ]);
+});
+
+test("Mysql2Adapter can use a per-call connection", async () => {
+  const registry = new SqlRegistry({ strict: false, dialect: "mysql" });
+  registry.queries["users.rename"] = {
+    meta: {
+      params: []
+    },
+    sql: {
+      default: "UPDATE users SET name = :name WHERE id = :id"
+    }
+  };
+
+  const connection = {
+    execute(sql, values) {
+      assert.strictEqual(sql, "UPDATE users SET name = ? WHERE id = ?");
+      assert.deepStrictEqual(values, ["Alice", 1]);
+      return Promise.resolve([{ affectedRows: 1 }, []]);
+    }
+  };
+
+  const adapter = new Mysql2Adapter(registry);
+  const result = await adapter.query(connection, "users.rename", {
+    params: {
+      id: 1,
+      name: "Alice"
+    }
+  });
+
+  assert.deepStrictEqual(result, [{ affectedRows: 1 }, []]);
+});
+
+test("Mysql2Adapter can use query instead of execute", async () => {
+  const registry = new SqlRegistry({ strict: false, dialect: "mysql" });
+  registry.queries["users.findById"] = {
+    meta: {
+      params: []
+    },
+    sql: {
+      default: "SELECT * FROM users WHERE id = :id"
+    }
+  };
+
+  const connection = {
+    query(sql, values) {
+      assert.strictEqual(sql, "SELECT * FROM users WHERE id = ?");
+      assert.deepStrictEqual(values, [1]);
+      return Promise.resolve([[{ id: 1 }], []]);
+    }
+  };
+
+  const adapter = new Mysql2Adapter(connection, registry);
+  const result = await adapter.query("users.findById", {
+    params: {
+      id: 1
+    },
+    method: "query"
+  });
+
+  assert.deepStrictEqual(result, [[{ id: 1 }], []]);
+});
+
+test("Mysql2Adapter passes queryOptions with managed sql and values", async () => {
+  const registry = new SqlRegistry({ strict: false, dialect: "mysql" });
+  registry.queries["users.findById"] = {
+    meta: {
+      params: []
+    },
+    sql: {
+      default: "SELECT * FROM users WHERE id = :id"
+    }
+  };
+
+  const connection = {
+    execute(sqlOrOptions, values) {
+      assert.deepStrictEqual(sqlOrOptions, {
+        rowsAsArray: true,
+        sql: "SELECT * FROM users WHERE id = ?"
+      });
+      assert.deepStrictEqual(values, [1]);
+      return Promise.resolve([[[1, "Alice"]], []]);
+    }
+  };
+
+  const adapter = new Mysql2Adapter(connection, registry);
+  const result = await adapter.query("users.findById", {
+    params: {
+      id: 1
+    },
+    queryOptions: {
+      rowsAsArray: true
+    }
+  });
+
+  assert.deepStrictEqual(result, [[[1, "Alice"]], []]);
+});
+
+test("Mysql2Adapter owns sql and values query options", async () => {
+  const registry = new SqlRegistry({ strict: false, dialect: "mysql" });
+  registry.queries["users.findById"] = {
+    meta: {
+      params: []
+    },
+    sql: {
+      default: "SELECT * FROM users WHERE id = :id"
+    }
+  };
+
+  const connection = {
+    execute() {
+      throw new Error("unexpected query");
+    }
+  };
+
+  const adapter = new Mysql2Adapter(connection, registry);
+
+  await assert.rejects(
+    () => adapter.query("users.findById", {
+      params: {
+        id: 1
+      },
+      queryOptions: {
+        sql: "SELECT 1"
+      }
+    }),
+    /queryOptions\.sql and queryOptions\.values are managed by Mysql2Adapter/
+  );
+});
+
+test("Mysql2Adapter rejects unsupported methods", async () => {
+  const registry = new SqlRegistry({ strict: false, dialect: "mysql" });
+  registry.queries["users.findById"] = {
+    meta: {
+      params: []
+    },
+    sql: {
+      default: "SELECT * FROM users WHERE id = :id"
+    }
+  };
+
+  const connection = {
+    execute() {
+      throw new Error("unexpected query");
+    }
+  };
+
+  const adapter = new Mysql2Adapter(connection, registry);
+
+  await assert.rejects(
+    () => adapter.query("users.findById", {
+      params: {
+        id: 1
+      },
+      method: "run"
+    }),
+    /unsupported mysql2 method: run/
   );
 });
 
