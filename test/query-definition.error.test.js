@@ -505,6 +505,116 @@ test("SqlRegistry accepts dotted and hyphenated import namespaces", async () => 
   assert.ok(registry.has("fragments.user-v1.active"));
 });
 
+test("SqlRegistry accepts adjacent namespaced imports", async () => {
+  const fixtureDir = path.join(__dirname, ".tmp", "registry-adjacent-namespaced-imports");
+  const rootPath = path.join(fixtureDir, "root.md");
+  const imagesPath = path.join(fixtureDir, "images.md");
+  const subjectsPath = path.join(fixtureDir, "subjects.md");
+
+  writeFixture(rootPath, [
+    '@import "./images.md" as images',
+    '@import "./subjects.md" as subjects',
+    ""
+  ]);
+  writeFixture(imagesPath, [
+    "## find",
+    "",
+    "```sql",
+    "SELECT * FROM images",
+    "```",
+    ""
+  ]);
+  writeFixture(subjectsPath, [
+    "## find",
+    "",
+    "```sql",
+    "SELECT * FROM subjects",
+    "```",
+    ""
+  ]);
+
+  const registry = new SqlRegistry();
+
+  registry.loadFile(rootPath);
+  assert.ok(registry.has("images.find"));
+  assert.ok(registry.has("subjects.find"));
+});
+
+test("SqlRegistry accepts adjacent imports with descriptions", async () => {
+  const fixtureDir = path.join(__dirname, ".tmp", "registry-adjacent-described-imports");
+  const rootPath = path.join(fixtureDir, "root.md");
+  const imagesPath = path.join(fixtureDir, "images.md");
+  const subjectsPath = path.join(fixtureDir, "subjects.md");
+
+  writeFixture(rootPath, [
+    '@import "./images.md" - Image queries',
+    '@import "./subjects.md" - Subject queries',
+    ""
+  ]);
+  writeFixture(imagesPath, [
+    "## images.find",
+    "",
+    "```sql",
+    "SELECT * FROM images",
+    "```",
+    ""
+  ]);
+  writeFixture(subjectsPath, [
+    "## subjects.find",
+    "",
+    "```sql",
+    "SELECT * FROM subjects",
+    "```",
+    ""
+  ]);
+
+  const registry = new SqlRegistry();
+
+  registry.loadFile(rootPath);
+  assert.ok(registry.has("images.find"));
+  assert.ok(registry.has("subjects.find"));
+});
+
+test("SqlRegistry accepts adjacent namespaced imports in nested imports", async () => {
+  const fixtureDir = path.join(__dirname, ".tmp", "registry-nested-adjacent-namespaced-imports");
+  const rootPath = path.join(fixtureDir, "root.md");
+  const featurePath = path.join(fixtureDir, "feature.md");
+  const imagesPath = path.join(fixtureDir, "images.md");
+  const subjectsPath = path.join(fixtureDir, "subjects.md");
+
+  writeFixture(rootPath, [
+    '@import "./feature.md" as app',
+    ""
+  ]);
+  writeFixture(featurePath, [
+    '@import "./images.md" as images',
+    '@import "./subjects.md" as subjects',
+    ""
+  ]);
+  writeFixture(imagesPath, [
+    "## find",
+    "",
+    "```sql",
+    "SELECT * FROM images",
+    "```",
+    ""
+  ]);
+  writeFixture(subjectsPath, [
+    "## find",
+    "",
+    "```sql",
+    "SELECT * FROM subjects",
+    "```",
+    ""
+  ]);
+
+  const registry = new SqlRegistry();
+
+  registry.loadFile(rootPath);
+  assert.ok(registry.has("app.images.find"));
+  assert.ok(registry.has("app.subjects.find"));
+});
+
 test("SqlRegistry preserves heading descriptions while applying import namespace", async () => {
   const fixtureDir = path.join(__dirname, ".tmp", "registry-import-heading-description");
   const rootPath = path.join(fixtureDir, "root.md");

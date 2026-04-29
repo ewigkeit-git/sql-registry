@@ -203,6 +203,16 @@ function formatQueryHeading(name: string, description = "") {
   return description ? `${name} - ${description}` : name;
 }
 
+function applyNamespaceToHeadingLine(line: string, namespacePrefix: string) {
+  if (!namespacePrefix) return line;
+
+  return line.replace(/^##\s+(.+)$/, (_, name) => {
+    const heading = parseQueryHeading(String(name));
+    if (!heading.name) return `## ${heading.name}`;
+    return `## ${formatQueryHeading(`${namespacePrefix}.${heading.name}`, heading.description)}`;
+  });
+}
+
 function validateEntry(name: string, entry: QueryEntry, source?: QuerySourceInfo) {
   const errors: string[] = [];
   const queryLoc = source ? location(source.filePath, source.queryLine) : "";
@@ -500,7 +510,7 @@ export function resolveImports(
     const parsed = parseImportDirective(line);
 
     if (!parsed) {
-      out.push(line);
+      out.push(applyNamespaceToHeadingLine(line, namespacePrefix));
       continue;
     }
 
@@ -527,7 +537,7 @@ export function resolveImports(
     );
 
     if (importDescription || importNamespace) {
-    const metaParts: string[] = [];
+      const metaParts: string[] = [];
       if (importNamespace) metaParts.push(`ns=${nextPrefix}`);
       if (importDescription) metaParts.push(`desc=${importDescription}`);
       out.push(`<!-- import: ${importTarget}${metaParts.length ? " | " + metaParts.join(" | ") : ""} -->`);
@@ -536,17 +546,7 @@ export function resolveImports(
     out.push(expanded);
   }
 
-  const joined = out.join("\n");
-
-  if (!namespacePrefix) {
-    return joined;
-  }
-
-  return joined.replace(/^##\s+(.+)$/gm, (_, name) => {
-    const heading = parseQueryHeading(String(name));
-    if (!heading.name) return `## ${heading.name}`;
-    return `## ${formatQueryHeading(`${namespacePrefix}.${heading.name}`, heading.description)}`;
-  });
+  return out.join("\n");
 }
 
 export function parseMarkdownFile(filePath: string): ParseMarkdownResult {
@@ -669,6 +669,7 @@ export function parseMarkdownFile(filePath: string): ParseMarkdownResult {
 
     const text = stripMarkdownListMarker(line.trim());
     if (!text) continue;
+    if (/^<!--.*-->$/.test(text)) continue;
 
     if (text === "orderable:") {
       if ("orderable" in currentMeta) {
