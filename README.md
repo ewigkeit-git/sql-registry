@@ -1,6 +1,7 @@
 # sql-registry
 
-Write SQL in Markdown. Treat it as a first-class asset.
+Stop scattering SQL across your codebase.
+Treat SQL as a structured, versioned asset in Markdown.
 
 👉 Turn existing SQL into structured Markdown with AI, then keep it maintainable as your system evolves.
 
