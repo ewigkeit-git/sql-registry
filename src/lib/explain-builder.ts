@@ -1,4 +1,4 @@
-import { DIALECT, normalizeDialect } from "./dialect";
+import { getExplainPrefix } from "./dialect";
 
 type SqlStatement = {
   sql: string;
@@ -20,27 +20,7 @@ export function buildExplain(stmt: SqlStatement, options: ExplainOptions = {}): 
     throw new Error("stmt.sql is required");
   }
 
-  const normalizedDialect = dialect === "default"
-    ? DIALECT.SQLITE
-    : normalizeDialect(dialect);
-  let prefix;
-
-  switch (normalizedDialect) {
-    case DIALECT.SQLITE:
-      prefix = analyze ? "EXPLAIN QUERY PLAN" : "EXPLAIN";
-      break;
-
-    case DIALECT.PG:
-      prefix = analyze ? "EXPLAIN ANALYZE" : "EXPLAIN";
-      break;
-
-    case DIALECT.MYSQL:
-      prefix = "EXPLAIN";
-      break;
-
-    default:
-      throw new Error(`unsupported dialect: ${normalizedDialect}`);
-  }
+  const prefix = getExplainPrefix(dialect, { analyze });
 
   return {
     sql: `${prefix} ${stmt.sql}`,

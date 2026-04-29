@@ -18,12 +18,28 @@ export function compileSql(
   const parts: string[] = [];
   let lastIndex = 0;
   const placeholder = options.placeholder || "question";
+  const numberedParamIndexes = new Map<string, number>();
+  const orderedTokens = [...tokens].sort((a, b) => {
+    if (a.start !== b.start) return a.start - b.start;
+    return a.end - b.end;
+  });
 
-  for (let i = 0; i < tokens.length; i++) {
-    const token = tokens[i];
+  for (const token of orderedTokens) {
     parts.push(sql.slice(lastIndex, token.start));
-    parts.push(placeholder === "numbered" ? `$${i + 1}` : "?");
-    values.push(params[token.name]);
+
+    if (placeholder === "numbered") {
+      let paramIndex = numberedParamIndexes.get(token.name);
+      if (paramIndex === undefined) {
+        paramIndex = numberedParamIndexes.size + 1;
+        numberedParamIndexes.set(token.name, paramIndex);
+        values.push(params[token.name]);
+      }
+      parts.push(`$${paramIndex}`);
+    } else {
+      parts.push("?");
+      values.push(params[token.name]);
+    }
+
     lastIndex = token.end;
   }
 

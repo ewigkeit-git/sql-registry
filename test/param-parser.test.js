@@ -69,6 +69,16 @@ const extractionCases = [
     names: ["real"]
   },
   {
+    name: "mysql backtick identifier ignored",
+    sql: "select `:ignored` as col, :real",
+    names: ["real"]
+  },
+  {
+    name: "mysql escaped backtick identifier ignored",
+    sql: "select `a `` :ignored `` b`, :real",
+    names: ["real"]
+  },
+  {
     name: "line comment ignored",
     sql: "select :id -- :ignored\nwhere name = :name",
     names: ["id", "name"]
@@ -235,7 +245,8 @@ test("stripQuotedAndCommented preserves string length", () => {
     "select :id -- :ignored\nwhere name = :name",
     "select :id /* :ignored\nstill ignored */ where x = :x",
     "select $tag$ :ignored\nstill ignored $tag$, :real",
-    "select \"quoted :identifier\", :real"
+    "select \"quoted :identifier\", :real",
+    "select `mysql :identifier`, :real"
   ];
 
   for (const sql of samples) {

@@ -18,6 +18,11 @@ const {
 } = require("../index");
 const { SqlBuilder, SqlBuilderError } = require("../dist/lib/builder");
 const { buildExplain } = require("../dist/lib/explain-builder");
+const {
+  getExplainPrefix,
+  getPlaceholderStyle,
+  normalizeStatementDialect
+} = require("../dist/lib/dialect");
 const { test, run } = require("./harness");
 require("./param-parser.test");
 require("./param-types.normal.test");
@@ -94,6 +99,17 @@ test("validateBindParams owns missing and unknown param checks", async () => {
   );
 });
 
+test("validateBindParams rejects undefined bind values", async () => {
+  assert.throws(
+    () => validateBindParams("select :id", ["id"], { id: undefined }),
+    /undefined params: id/
+  );
+
+  assert.doesNotThrow(
+    () => validateBindParams("select :id", ["id"], { id: null })
+  );
+});
+
 test("bind input errors include query dialect and param context", async () => {
   assert.throws(
     () => validateBindParams("select :id", ["id"], {}, {
@@ -108,6 +124,16 @@ test("bind input errors include query dialect and param context", async () => {
       return true;
     }
   );
+});
+
+test("dialect module owns statement dialect policies", async () => {
+  assert.strictEqual(normalizeStatementDialect("default"), "sqlite");
+  assert.strictEqual(normalizeStatementDialect("postgresql"), "pg");
+  assert.strictEqual(getPlaceholderStyle("pg"), "numbered");
+  assert.strictEqual(getPlaceholderStyle("mysql"), "question");
+  assert.strictEqual(getExplainPrefix("sqlite", { analyze: true }), "EXPLAIN QUERY PLAN");
+  assert.strictEqual(getExplainPrefix("postgres", { analyze: true }), "EXPLAIN ANALYZE");
+  assert.strictEqual(getExplainPrefix("mysql", { analyze: true }), "EXPLAIN");
 });
 
 test("compileSql owns placeholder conversion and value ordering", async () => {
@@ -127,9 +153,47 @@ test("compileSql supports numbered placeholders", async () => {
   assert.deepStrictEqual(
     compileSql(sql, tokens, { id: 7, role: "admin" }, { placeholder: "numbered" }),
     {
-      sql: "select $1 as id, $2 as role, $3 as again",
-      values: [7, "admin", 7]
+      sql: "select $1 as id, $2 as role, $1 as again",
+      values: [7, "admin"]
     }
+  );
+});
+
+test("compileSql does not depend on parser token order", async () => {
+  const sql = "select :id as id, :role as role, :id as again";
+  const tokens = extractNamedParamTokens(sql).reverse();
+
+  assert.deepStrictEqual(compileSql(sql, tokens, { id: 7, role: "admin" }), {
+    sql: "select ? as id, ? as role, ? as again",
+    values: [7, "admin", 7]
+  });
+
+  assert.deepStrictEqual(
+    compileSql(sql, tokens, { id: 7, role: "admin" }, { placeholder: "numbered" }),
+    {
+      sql: "select $1 as id, $2 as role, $1 as again",
+      values: [7, "admin"]
+    }
+  );
+});
+
+test("bindSql reuses numbered placeholders for repeated pg params", async () => {
+  const stmt = bindSql(
+    "select :id as id where parent_id = :id and role = :role",
+    { id: 7, role: "admin" },
+    { dialect: "pg" }
+  );
+
+  assert.deepStrictEqual(stmt, {
+    sql: "select $1 as id where parent_id = $1 and role = $2",
+    values: [7, "admin"]
+  });
+});
+
+test("bindSql rejects undefined bind values before compilation", async () => {
+  assert.throws(
+    () => bindSql("select :id as id", { id: undefined }),
+    /undefined params: id/
   );
 });
 

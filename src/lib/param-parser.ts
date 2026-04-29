@@ -76,6 +76,24 @@ export function stripQuotedAndCommented(sql: string) {
       continue;
     }
 
+    if (ch === "`") {
+      const start = i;
+      i++;
+      while (i < sql.length) {
+        if (sql[i] === "`" && sql[i + 1] === "`") {
+          i += 2;
+          continue;
+        }
+        if (sql[i] === "`") {
+          i++;
+          break;
+        }
+        i++;
+      }
+      maskSegment(start, i);
+      continue;
+    }
+
     if (ch === "$") {
       const rest = sql.slice(i);
       const tagMatch = rest.match(/^\$([A-Za-z_][A-Za-z0-9_]*)?\$/);

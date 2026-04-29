@@ -29,6 +29,16 @@ export function validateBindParams(
     });
   }
 
+  const undefinedParams = paramNames.filter(name => params[name] === undefined);
+  if (undefinedParams.length > 0) {
+    throw new SqlBindError(`undefined params: ${undefinedParams.join(", ")}`, {
+      queryName: options.queryName,
+      dialect: options.dialect,
+      undefined: undefinedParams,
+      sql
+    });
+  }
+
   if (strict) {
     const extra = Object.keys(params).filter(name => !paramNames.includes(name));
     if (extra.length > 0) {
