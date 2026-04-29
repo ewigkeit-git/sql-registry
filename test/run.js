@@ -528,6 +528,103 @@ test("SqlBuilder where slot ignores WHERE inside subqueries before the marker", 
   });
 });
 
+test("SqlBuilder where slot starts a WHERE clause from leading OR fragments", async () => {
+  const builder = new SqlBuilder(
+    null,
+    "users.search",
+    "SELECT * FROM users /*#where*/"
+  );
+
+  builder
+    .append("where", "OR name LIKE :name", { name: "%Alice%" })
+    .append("where", "OR email LIKE :email", { email: "%alice@example.com%" });
+
+  assert.deepStrictEqual(builder.build(), {
+    sql: "SELECT * FROM users WHERE name LIKE ?\nOR email LIKE ?",
+    values: ["%Alice%", "%alice@example.com%"]
+  });
+});
+
+test("SqlBuilder where slot does not render WHERE when no fragments are appended", async () => {
+  const builder = new SqlBuilder(
+    null,
+    "users.search",
+    "SELECT * FROM users /*#where*/"
+  );
+
+  assert.deepStrictEqual(builder.build(), {
+    sql: "SELECT * FROM users",
+    values: []
+  });
+});
+
+test("SqlBuilder where slot preserves a fragment that already starts with WHERE", async () => {
+  const builder = new SqlBuilder(
+    null,
+    "users.search",
+    "SELECT * FROM users /*#where*/"
+  );
+
+  builder.append("where", "WHERE active = :active", { active: true });
+
+  assert.deepStrictEqual(builder.build(), {
+    sql: "SELECT * FROM users WHERE active = ?",
+    values: [true]
+  });
+});
+
+test("SqlBuilder where slot ignores WHERE inside strings and comments before the marker", async () => {
+  const builder = new SqlBuilder(
+    null,
+    "users.search",
+    [
+      "SELECT 'where' AS literal",
+      "FROM users",
+      "-- where in a line comment",
+      "/* where in a block comment */",
+      "/*#where*/"
+    ].join("\n")
+  );
+
+  builder.append("where", "AND active = :active", { active: true });
+
+  assert.deepStrictEqual(builder.build(), {
+    sql: [
+      "SELECT 'where' AS literal",
+      "FROM users",
+      "-- where in a line comment",
+      "/* where in a block comment */",
+      "WHERE active = ?"
+    ].join("\n"),
+    values: [true]
+  });
+});
+
+test("SqlBuilder where slot ignores WHERE inside CTEs before the marker", async () => {
+  const builder = new SqlBuilder(
+    null,
+    "users.search",
+    [
+      "WITH active_users AS (",
+      "  SELECT * FROM users WHERE deleted = 0",
+      ")",
+      "SELECT * FROM active_users /*#where*/"
+    ].join("\n")
+  );
+
+  builder.append("where", "AND active = :active", { active: true });
+
+  assert.deepStrictEqual(builder.build(), {
+    sql: [
+      "WITH active_users AS (",
+      "  SELECT * FROM users WHERE deleted = 0",
+      ")",
+      "SELECT * FROM active_users WHERE active = ?"
+    ].join("\n"),
+    values: [true]
+  });
+});
+
 test("SqlBuilder appendQuery rejects empty params", async () => {
   const registry = {
     getSql(name) {
