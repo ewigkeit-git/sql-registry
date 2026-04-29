@@ -484,7 +484,7 @@ if (params.status) {
 - `limit` / `offset` の数値化と上限チェック
 - 未定義 param / 未定義 slot を検出
 - `EXPLAIN` statement の生成
-- better-sqlite3 / node:sqlite / MariaDB / Sequelize / TypeORM adapter
+- better-sqlite3 / node:sqlite / node-postgres / MariaDB / Sequelize / TypeORM adapter
 - 既存 ORM / query builder と併用しやすい
 - TypeScript 対応
 

@@ -11,6 +11,7 @@ const {
   BetterSqlite3Adapter,
   MariadbAdapter,
   NodeSqliteAdapter,
+  PgAdapter,
   SequelizeAdapter,
   TypeOrmAdapter
 } = require("../index");
@@ -2419,6 +2420,189 @@ test("MariadbAdapter owns sql and values query options", async () => {
     }),
     /queryOptions\.sql and queryOptions\.values are managed by MariadbAdapter/
   );
+});
+
+test("PgAdapter queries by SQL ID", async () => {
+  const registry = new SqlRegistry({ strict: false, dialect: "pg" });
+  registry.queries["users.findActive"] = {
+    meta: {
+      params: []
+    },
+    sql: {
+      default: "SELECT * FROM users WHERE active = :active"
+    }
+  };
+
+  const calls = [];
+  const client = {
+    query(sql, values) {
+      calls.push({ sql, values });
+      return Promise.resolve({
+        rows: [{ id: 1, active: true }]
+      });
+    }
+  };
+
+  const adapter = new PgAdapter(client, registry);
+  const result = await adapter.query("users.findActive", {
+    params: {
+      active: true
+    }
+  });
+
+  assert.deepStrictEqual(result, {
+    rows: [{ id: 1, active: true }]
+  });
+  assert.deepStrictEqual(calls, [
+    {
+      sql: "SELECT * FROM users WHERE active = $1",
+      values: [true]
+    }
+  ]);
+});
+
+test("PgAdapter can use a per-call client", async () => {
+  const registry = new SqlRegistry({ strict: false, dialect: "postgres" });
+  registry.queries["users.rename"] = {
+    meta: {
+      params: []
+    },
+    sql: {
+      default: "UPDATE users SET name = :name WHERE id = :id"
+    }
+  };
+
+  const client = {
+    query(sql, values) {
+      assert.strictEqual(sql, "UPDATE users SET name = $1 WHERE id = $2");
+      assert.deepStrictEqual(values, ["Alice", 1]);
+      return Promise.resolve({
+        rowCount: 1
+      });
+    }
+  };
+
+  const adapter = new PgAdapter(registry);
+  const result = await adapter.query(client, "users.rename", {
+    params: {
+      id: 1,
+      name: "Alice"
+    }
+  });
+
+  assert.deepStrictEqual(result, {
+    rowCount: 1
+  });
+});
+
+test("PgAdapter passes queryOptions with managed text and values", async () => {
+  const registry = new SqlRegistry({ strict: false, dialect: "pg" });
+  registry.queries["users.findById"] = {
+    meta: {
+      params: []
+    },
+    sql: {
+      default: "SELECT * FROM users WHERE id = :id"
+    }
+  };
+
+  const client = {
+    query(config, values) {
+      assert.deepStrictEqual(config, {
+        name: "users-find-by-id",
+        rowMode: "array",
+        text: "SELECT * FROM users WHERE id = $1"
+      });
+      assert.deepStrictEqual(values, [1]);
+      return Promise.resolve({
+        rows: [[1, "Alice"]]
+      });
+    }
+  };
+
+  const adapter = new PgAdapter(client, registry);
+  const result = await adapter.query("users.findById", {
+    params: {
+      id: 1
+    },
+    queryOptions: {
+      name: "users-find-by-id",
+      rowMode: "array"
+    }
+  });
+
+  assert.deepStrictEqual(result, {
+    rows: [[1, "Alice"]]
+  });
+});
+
+test("PgAdapter owns text and values query options", async () => {
+  const registry = new SqlRegistry({ strict: false, dialect: "pg" });
+  registry.queries["users.findById"] = {
+    meta: {
+      params: []
+    },
+    sql: {
+      default: "SELECT * FROM users WHERE id = :id"
+    }
+  };
+
+  const client = {
+    query() {
+      throw new Error("unexpected query");
+    }
+  };
+
+  const adapter = new PgAdapter(client, registry);
+
+  await assert.rejects(
+    () => adapter.query("users.findById", {
+      params: {
+        id: 1
+      },
+      queryOptions: {
+        text: "SELECT 1"
+      }
+    }),
+    /queryOptions\.text and queryOptions\.values are managed by PgAdapter/
+  );
+});
+
+test("PgAdapter can explain with a bound client", async () => {
+  const registry = new SqlRegistry({ strict: false, dialect: "pg" });
+  registry.queries["users.findById"] = {
+    meta: {
+      params: []
+    },
+    sql: {
+      default: "SELECT * FROM users WHERE id = :id"
+    }
+  };
+
+  const client = {
+    query(sql, values) {
+      assert.strictEqual(sql, "EXPLAIN SELECT * FROM users WHERE id = $1");
+      assert.deepStrictEqual(values, [1]);
+      return Promise.resolve({
+        rows: [{ detail: "Index Scan using users_pkey" }]
+      });
+    }
+  };
+
+  const adapter = new PgAdapter(client, registry);
+  const result = await adapter.explain("users.findById", {
+    params: {
+      id: 1
+    }
+  });
+
+  assert.deepStrictEqual(result, {
+    rows: [
+      {
+        detail: "Index Scan using users_pkey"
+      }
+    ]
+  });
 });
 
 test("TypeOrmAdapter queries by SQL ID with a DataSource-like executor", async () => {
