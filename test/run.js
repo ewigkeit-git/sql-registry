@@ -11,7 +11,8 @@ const {
   BetterSqlite3Adapter,
   MariadbAdapter,
   NodeSqliteAdapter,
-  SequelizeAdapter
+  SequelizeAdapter,
+  TypeOrmAdapter
 } = require("../index");
 const { SqlBuilder, SqlBuilderError } = require("../dist/lib/builder");
 const { buildExplain } = require("../dist/lib/explain-builder");
@@ -623,6 +624,55 @@ test("SqlBuilder where slot ignores WHERE inside CTEs before the marker", async 
     ].join("\n"),
     values: [true]
   });
+});
+
+test("SqlBuilder accepts slot marker descriptions", async () => {
+  const builder = new SqlBuilder(
+    null,
+    "users.search",
+    "SELECT * FROM users /*#where - optional user filters*/ /*#paging - limit and offset*/"
+  );
+
+  builder
+    .append("where", "AND active = :active", { active: true })
+    .limit("paging", 10);
+
+  assert.deepStrictEqual(builder.build(), {
+    sql: "SELECT * FROM users WHERE active = ? LIMIT ?",
+    values: [true, 10]
+  });
+});
+
+test("SqlBuilder keeps hyphenated slot names distinct from descriptions", async () => {
+  const builder = new SqlBuilder(
+    null,
+    "logs.search",
+    "SELECT * FROM logs /*#logs-page*/"
+  );
+
+  builder.limit("logs-page", 20);
+
+  assert.deepStrictEqual(builder.build(), {
+    sql: "SELECT * FROM logs LIMIT ?",
+    values: [20]
+  });
+});
+
+test("SqlBuilder reports described slot names in allowed slot errors", async () => {
+  const builder = new SqlBuilder(
+    null,
+    "users.search",
+    "SELECT * FROM users /*#where - optional filters*/"
+  );
+
+  assert.throws(
+    () => builder.append("missing", "AND active = 1"),
+    error => {
+      assert.ok(error instanceof SqlBuilderError);
+      assert.deepStrictEqual(error.details.allowed, ["where"]);
+      return true;
+    }
+  );
 });
 
 test("SqlBuilder appendQuery rejects empty params", async () => {
@@ -2368,6 +2418,118 @@ test("MariadbAdapter owns sql and values query options", async () => {
       }
     }),
     /queryOptions\.sql and queryOptions\.values are managed by MariadbAdapter/
+  );
+});
+
+test("TypeOrmAdapter queries by SQL ID with a DataSource-like executor", async () => {
+  const registry = new SqlRegistry({ strict: false, dialect: "pg" });
+  registry.queries["users.findActive"] = {
+    meta: {
+      params: []
+    },
+    sql: {
+      default: "SELECT * FROM users WHERE active = :active"
+    }
+  };
+
+  const calls = [];
+  const dataSource = {
+    manager: {
+      query(sql, values) {
+        calls.push({ sql, values });
+        return Promise.resolve([{ id: 1, active: true }]);
+      }
+    }
+  };
+
+  const adapter = new TypeOrmAdapter(dataSource, registry);
+  const result = await adapter.query("users.findActive", {
+    params: {
+      active: true
+    }
+  });
+
+  assert.deepStrictEqual(result, [{ id: 1, active: true }]);
+  assert.deepStrictEqual(calls, [
+    {
+      sql: "SELECT * FROM users WHERE active = $1",
+      values: [true]
+    }
+  ]);
+});
+
+test("TypeOrmAdapter can use a per-call EntityManager-like executor", async () => {
+  const registry = new SqlRegistry({ strict: false, dialect: "sqlite" });
+  registry.queries["users.rename"] = {
+    meta: {
+      params: []
+    },
+    sql: {
+      default: "UPDATE users SET name = :name WHERE id = :id"
+    }
+  };
+
+  const manager = {
+    query(sql, values) {
+      assert.strictEqual(sql, "UPDATE users SET name = ? WHERE id = ?");
+      assert.deepStrictEqual(values, ["Alice", 1]);
+      return Promise.resolve({ affected: 1 });
+    }
+  };
+
+  const adapter = new TypeOrmAdapter(registry);
+  const result = await adapter.query(manager, "users.rename", {
+    params: {
+      id: 1,
+      name: "Alice"
+    }
+  });
+
+  assert.deepStrictEqual(result, {
+    affected: 1
+  });
+});
+
+test("TypeOrmAdapter can explain with a bound QueryRunner-like executor", async () => {
+  const registry = new SqlRegistry({ strict: false, dialect: "pg" });
+  registry.queries["users.findById"] = {
+    meta: {
+      params: []
+    },
+    sql: {
+      default: "SELECT * FROM users WHERE id = :id"
+    }
+  };
+
+  const queryRunner = {
+    query(sql, values) {
+      assert.strictEqual(sql, "EXPLAIN SELECT * FROM users WHERE id = $1");
+      assert.deepStrictEqual(values, [1]);
+      return Promise.resolve([{ detail: "Index Scan using users_pkey" }]);
+    }
+  };
+
+  const adapter = new TypeOrmAdapter(queryRunner, registry);
+  const result = await adapter.explain("users.findById", {
+    params: {
+      id: 1
+    }
+  });
+
+  assert.deepStrictEqual(result, [
+    {
+      detail: "Index Scan using users_pkey"
+    }
+  ]);
+});
+
+test("TypeOrmAdapter requires a TypeORM executor", async () => {
+  const registry = new SqlRegistry({ strict: false });
+  const adapter = new TypeOrmAdapter(registry);
+
+  assert.throws(
+    () => adapter.executeStatement(null, { sql: "SELECT 1", values: [] }),
+    /TypeORM DataSource, EntityManager, or QueryRunner/
   );
 });
 

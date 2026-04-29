@@ -172,10 +172,11 @@ Use ORM for simple CRUD, and sql-registry for:
 - Safe named parameter binding (`:id`)
 - Controlled dynamic SQL via builder
 - `where` slots can start from `AND ...` fragments without `WHERE 1 = 1`
+- Optional slot marker descriptions (`/*#where - optional filters*/`)
 - `ORDER BY` allowlist
 - limit / offset validation
 - SQL fragment reuse via `appendQuery`
-- Adapter support (better-sqlite3, MariaDB, Sequelize, etc.)
+- Adapter support (better-sqlite3, MariaDB, Sequelize, TypeORM, etc.)
 - `EXPLAIN` query generation
 
 ---

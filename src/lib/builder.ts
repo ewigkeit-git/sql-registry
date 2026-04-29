@@ -35,6 +35,8 @@ const BUILDER_FUNCTION_NAMES = new Set([
   "offset"
 ]);
 
+const SLOT_MARKER_PATTERN = /\/\*#([A-Za-z_][A-Za-z0-9_.-]*)(?:\s+-\s*.*?)?\*\//gs;
+
 type BuilderSlotApi = {
   __builderSlotApi: true;
   append: (sql: string, params?: Record<string, unknown>) => SqlBuilder;
@@ -278,7 +280,7 @@ function validateBuilderCallArguments(node: AstNode) {
 
 function extractSlotNames(sql: string): Set<string> {
   const names = new Set<string>();
-  const regex = /\/\*#([A-Za-z_][A-Za-z0-9_.-]*)\*\//g;
+  const regex = new RegExp(SLOT_MARKER_PATTERN);
   let match;
 
   while ((match = regex.exec(sql)) !== null) {
@@ -893,7 +895,7 @@ export class SqlBuilder {
     const usedSlots = new Set();
 
     const sql = this.baseSql.replace(
-      /\/\*#([A-Za-z_][A-Za-z0-9_.-]*)\*\//g,
+      SLOT_MARKER_PATTERN,
       (_match, slotName, markerOffset) => {
         usedSlots.add(slotName);
         return renderSlot(

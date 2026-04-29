@@ -11,5 +11,6 @@ export {
   BetterSqlite3Adapter,
   MariadbAdapter,
   NodeSqliteAdapter,
-  SequelizeAdapter
+  SequelizeAdapter,
+  TypeOrmAdapter
 } from "./adapter";
