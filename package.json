@@ -22,10 +22,10 @@
   "author": "Takashi Kushibiki",
   "license": "MIT",
   "dependencies": {
-    "acorn": "^8.16.0"
+    "acorn": "^8.16.0",
+    "typescript": "^5.8.3"
   },
   "devDependencies": {
-    "@types/node": "^22.19.17",
-    "typescript": "^5.8.3"
+    "@types/node": "^22.19.17"
   }
 }
