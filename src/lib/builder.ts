@@ -27,6 +27,7 @@ const FORBIDDEN_KEYS = new Set([
 const BUILDER_FUNCTION_NAMES = new Set([
   "at",
   "append",
+  "appendIf",
   "appendQuery",
   "param",
   "set",
@@ -40,6 +41,7 @@ const SLOT_MARKER_PATTERN = /\/\*#([A-Za-z_][A-Za-z0-9_.-]*)(?:\s+-\s*.*?)?\*\//
 type BuilderSlotApi = {
   __builderSlotApi: true;
   append: (sql: string, params?: Record<string, unknown>) => SqlBuilder;
+  appendIf: (condition: unknown, sql: string, params?: Record<string, unknown>) => SqlBuilder;
   appendQuery: (queryName: string, params?: Record<string, unknown>) => SqlBuilder;
 };
 
@@ -242,6 +244,11 @@ function validateBuilderCallArguments(node: AstNode) {
         assertStaticStringArgument(args, 1, "append SQL");
         assertObjectExpressionArgument(args, 2, "append params");
         return;
+      case "appendIf":
+        assertStaticStringArgument(args, 0, "slot name");
+        assertStaticStringArgument(args, 2, "append SQL");
+        assertObjectExpressionArgument(args, 3, "append params");
+        return;
       case "appendQuery":
         assertStaticStringArgument(args, 0, "slot name");
         assertStaticStringArgument(args, 1, "query name");
@@ -275,6 +282,11 @@ function validateBuilderCallArguments(node: AstNode) {
     if (key === "append") {
       assertStaticStringArgument(args, 0, "append SQL");
       assertObjectExpressionArgument(args, 1, "append params");
+    }
+
+    if (key === "appendIf") {
+      assertStaticStringArgument(args, 1, "append SQL");
+      assertObjectExpressionArgument(args, 2, "append params");
     }
 
     if (key === "appendQuery") {
@@ -783,6 +795,11 @@ export class SqlBuilder {
         return builder;
       },
 
+      appendIf: (condition: unknown, sql: string, params: Record<string, unknown> = {}) => {
+        builder.appendIf(slotName, condition, sql, params);
+        return builder;
+      },
+
       appendQuery: (queryName: string, params?: Record<string, unknown>) => {
         if (!builder.registry) {
           throw new SqlBuilderError("registry is required for appendQuery");
@@ -831,6 +848,12 @@ export class SqlBuilder {
   }
 
   append(slotName: string, sql: string, params: Record<string, unknown> = {}) {
+    return this.appendTo(slotName, sql, params);
+  }
+
+  appendIf(slotName: string, condition: unknown, sql: string, params: Record<string, unknown> = {}) {
+    this.assertKnownSlot(slotName);
+    if (!condition) return this;
     return this.appendTo(slotName, sql, params);
   }
 
@@ -962,6 +985,11 @@ export class SqlBuilder {
 
       append: (slotName: string, sql: string, bindParams: Record<string, unknown> = {}) => {
         this.appendTo(slotName, sql, bindParams);
+        return this;
+      },
+
+      appendIf: (slotName: string, condition: unknown, sql: string, bindParams: Record<string, unknown> = {}) => {
+        this.appendIf(slotName, condition, sql, bindParams);
         return this;
       },
 

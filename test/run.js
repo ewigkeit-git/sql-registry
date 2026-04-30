@@ -362,6 +362,33 @@ test("runBuilderScript supports a whitelisted builder subset", async () => {
   });
 });
 
+test("runBuilderScript supports appendIf helpers", async () => {
+  const builder = new SqlBuilder(
+    null,
+    "users.search",
+    "SELECT * FROM users /*#where*/"
+  );
+
+  builder.runBuilderScript(
+    [
+      "appendIf('where', params.name, 'AND name LIKE :name', { name: params.name });",
+      "at('where').appendIf(params.active !== undefined, 'OR active = :active', { active: params.active });",
+      "appendIf('where', false, 'AND missing = :missing');"
+    ].join("\n"),
+    {
+      params: {
+        name: "%alice%",
+        active: false
+      }
+    }
+  );
+
+  assert.deepStrictEqual(builder.build(), {
+    sql: "SELECT * FROM users WHERE name LIKE ?\nOR active = ?",
+    values: ["%alice%", false]
+  });
+});
+
 test("runBuilderScript rejects unsupported globals", async () => {
   const builder = new SqlBuilder(null, "users.search", "SELECT 1");
 
@@ -633,6 +660,26 @@ test("SqlBuilder appendQuery accepts omitted params", async () => {
   assert.deepStrictEqual(builder.build(), {
     sql: "SELECT * FROM users WHERE 1 = 1 AND deleted = 0",
     values: []
+  });
+});
+
+test("SqlBuilder appendIf conditionally appends fragments", async () => {
+  const builder = new SqlBuilder(
+    null,
+    "users.search",
+    "SELECT * FROM users /*#where*/"
+  );
+
+  builder
+    .appendIf("where", true, "AND name LIKE :name", { name: "%alice%" })
+    .appendIf("where", false, "AND missing = :missing")
+    .at("where")
+    .appendIf(true, "OR email LIKE :email", { email: "%alice@example.com%" });
+  builder.at("where").appendIf(false, "AND skipped = :skipped");
+
+  assert.deepStrictEqual(builder.build(), {
+    sql: "SELECT * FROM users WHERE name LIKE ?\nOR email LIKE ?",
+    values: ["%alice%", "%alice@example.com%"]
   });
 });
 

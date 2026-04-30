@@ -78,6 +78,12 @@ export class SqlBuilderError extends Error {
   details: Record<string, unknown>;
 }
 
+export type BuilderSlotApi = {
+  append(sql: string, params?: Record<string, unknown>): SqlBuilder;
+  appendIf(condition: unknown, sql: string, params?: Record<string, unknown>): SqlBuilder;
+  appendQuery(queryName: string, params?: Record<string, unknown>): SqlBuilder;
+};
+
 export class SqlBuilder {
   constructor(
     registry: SqlRegistry | null,
@@ -86,7 +92,9 @@ export class SqlBuilder {
     options?: BuilderOptions
   );
 
+  at(slotName: string): BuilderSlotApi;
   append(slotName: string, sql: string, params?: Record<string, unknown>): this;
+  appendIf(slotName: string, condition: unknown, sql: string, params?: Record<string, unknown>): this;
   appendQuery(slotName: string, queryName: string, params?: Record<string, unknown>): this;
   addParams(params?: Record<string, unknown>): this;
   set(sql: string, params?: Record<string, unknown>): this;

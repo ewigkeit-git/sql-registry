@@ -119,6 +119,9 @@ const scriptCases = [
   ["dynamic-slot", "append(params.slot, 'AND id = :id', { id: 1 })", /slot name must be a string literal/],
   ["dynamic-sql", "append('where', params.sql, { id: 1 })", /append SQL must be a string literal/],
   ["dynamic-bind-object", "append('where', 'AND id = :id', params.binds)", /append params must be an object literal/],
+  ["append-if-dynamic-slot", "appendIf(params.slot, true, 'AND id = :id', { id: 1 })", /slot name must be a string literal/],
+  ["append-if-dynamic-sql", "appendIf('where', true, params.sql, { id: 1 })", /append SQL must be a string literal/],
+  ["append-if-dynamic-bind-object", "appendIf('where', true, 'AND id = :id', params.binds)", /append params must be an object literal/],
   ["template-sql", "append('where', `AND id = ${params.id}`, { id: 1 })", /append SQL must be a string literal/],
   ["append-missing", "append('where', 'AND id = :id')", /missing/],
   ["append-extra", "append('where', 'AND active = 1', { active: true })", /not used/],
@@ -132,6 +135,8 @@ const scriptCases = [
   ["at-dynamic-slot", "at(params.slot).append('AND id = :id', { id: 1 })", /slot name must be a string literal/],
   ["at-computed-method", "at('where')['append']('AND id = :id', { id: 1 })", /computed helper methods/],
   ["at-unknown-method", "at('where').remove('AND id = :id', { id: 1 })", /unsupported helper method/],
+  ["at-append-if-dynamic-sql", "at('where').appendIf(true, params.sql, { id: 1 })", /append SQL must be a string literal/],
+  ["at-append-if-dynamic-bind-object", "at('where').appendIf(true, 'AND id = :id', params.binds)", /append params must be an object literal/],
   ["member-call-non-helper", "params.id.toString()", /method calls are only allowed/],
   ["for-loop", "for (let i = 0; i < 1; i++) { append('where', 'AND id = :id', { id: i }) }", /loop statements/],
   ["for-of", "for (const id of params.ids) { append('where', 'AND id = :id', { id }) }", /loop statements/],
@@ -229,5 +234,5 @@ test("SqlBuilder rejects more than 100 invalid builder and append patterns", asy
     );
   }
 
-  assert.strictEqual(count, 119);
+  assert.strictEqual(count, 124);
 });
