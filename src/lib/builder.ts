@@ -29,8 +29,10 @@ const BUILDER_FUNCTION_NAMES = new Set([
   "append",
   "appendIf",
   "appendQuery",
+  "appendQueryIf",
   "param",
   "set",
+  "setIf",
   "orderBy",
   "limit",
   "offset"
@@ -43,6 +45,7 @@ type BuilderSlotApi = {
   append: (sql: string, params?: Record<string, unknown>) => SqlBuilder;
   appendIf: (condition: unknown, sql: string, params?: Record<string, unknown>) => SqlBuilder;
   appendQuery: (queryName: string, params?: Record<string, unknown>) => SqlBuilder;
+  appendQueryIf: (condition: unknown, queryName: string, params?: Record<string, unknown>) => SqlBuilder;
 };
 
 type SqlRegistryLike = {
@@ -254,12 +257,21 @@ function validateBuilderCallArguments(node: AstNode) {
         assertStaticStringArgument(args, 1, "query name");
         assertNonEmptyObjectExpressionArgument(args, 2, "appendQuery params");
         return;
+      case "appendQueryIf":
+        assertStaticStringArgument(args, 0, "slot name");
+        assertStaticStringArgument(args, 2, "query name");
+        assertNonEmptyObjectExpressionArgument(args, 3, "appendQuery params");
+        return;
       case "param":
         assertObjectExpressionArgument(args, 0, "param params");
         return;
       case "set":
         assertStaticStringArgument(args, 0, "set SQL");
         assertObjectExpressionArgument(args, 1, "set params");
+        return;
+      case "setIf":
+        assertStaticStringArgument(args, 1, "set SQL");
+        assertObjectExpressionArgument(args, 2, "set params");
         return;
       case "orderBy":
       case "limit":
@@ -292,6 +304,11 @@ function validateBuilderCallArguments(node: AstNode) {
     if (key === "appendQuery") {
       assertStaticStringArgument(args, 0, "query name");
       assertNonEmptyObjectExpressionArgument(args, 1, "appendQuery params");
+    }
+
+    if (key === "appendQueryIf") {
+      assertStaticStringArgument(args, 1, "query name");
+      assertNonEmptyObjectExpressionArgument(args, 2, "appendQuery params");
     }
   }
 }
@@ -808,6 +825,11 @@ export class SqlBuilder {
         builder.validateAppendQueryParams(queryName, sql, params);
         builder.appendTo(slotName, sql, params || {});
         return builder;
+      },
+
+      appendQueryIf: (condition: unknown, queryName: string, params?: Record<string, unknown>) => {
+        builder.appendQueryIf(slotName, condition, queryName, params);
+        return builder;
       }
     };
   }
@@ -885,6 +907,17 @@ export class SqlBuilder {
 
   appendQuery(slotName: string, queryName: string, params?: Record<string, unknown>) {
     return this.at(slotName).appendQuery(queryName, params);
+  }
+
+  appendQueryIf(slotName: string, condition: unknown, queryName: string, params?: Record<string, unknown>) {
+    this.assertKnownSlot(slotName);
+    if (!condition) return this;
+    return this.appendQuery(slotName, queryName, params);
+  }
+
+  setIf(condition: unknown, sql: string, params: Record<string, unknown> = {}) {
+    if (!condition) return this;
+    return this.set(sql, params);
   }
 
   addParams(params: Record<string, unknown> = {}) {
@@ -998,6 +1031,11 @@ export class SqlBuilder {
         return this;
       },
 
+      appendQueryIf: (slotName: string, condition: unknown, queryName: string, bindParams?: Record<string, unknown>) => {
+        this.appendQueryIf(slotName, condition, queryName, bindParams);
+        return this;
+      },
+
       param: (bindParams: Record<string, unknown> = {}) => {
         this.addParams(bindParams);
         return this;
@@ -1005,6 +1043,11 @@ export class SqlBuilder {
 
       set: (sql: string, bindParams: Record<string, unknown> = {}) => {
         this.set(sql, bindParams);
+        return this;
+      },
+
+      setIf: (condition: unknown, sql: string, bindParams: Record<string, unknown> = {}) => {
+        this.setIf(condition, sql, bindParams);
         return this;
       },
 

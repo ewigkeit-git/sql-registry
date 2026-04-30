@@ -389,6 +389,41 @@ test("runBuilderScript supports appendIf helpers", async () => {
   });
 });
 
+test("runBuilderScript supports appendQueryIf and setIf helpers", async () => {
+  const registry = {
+    getSql(name) {
+      if (name === "fragments.active") return "AND active = :active";
+      throw new Error(`unexpected query: ${name}`);
+    }
+  };
+  const builder = new SqlBuilder(
+    registry,
+    "users.update",
+    "UPDATE users SET /*#set*/ WHERE id = :id /*#where*/"
+  );
+
+  builder.addParams({ id: 1 });
+  builder.runBuilderScript(
+    [
+      "setIf(params.name !== undefined, 'name = :name', { name: params.name });",
+      "setIf(false, 'missing = :missing');",
+      "appendQueryIf('where', params.active !== undefined, 'fragments.active', { active: params.active });",
+      "at('where').appendQueryIf(false, 'fragments.missing', { missing: params.missing });"
+    ].join("\n"),
+    {
+      params: {
+        name: "Alice",
+        active: true
+      }
+    }
+  );
+
+  assert.deepStrictEqual(builder.build(), {
+    sql: "UPDATE users SET name = ? WHERE id = ? AND active = ?",
+    values: ["Alice", 1, true]
+  });
+});
+
 test("runBuilderScript rejects unsupported globals", async () => {
   const builder = new SqlBuilder(null, "users.search", "SELECT 1");
 
@@ -680,6 +715,33 @@ test("SqlBuilder appendIf conditionally appends fragments", async () => {
   assert.deepStrictEqual(builder.build(), {
     sql: "SELECT * FROM users WHERE name LIKE ?\nOR email LIKE ?",
     values: ["%alice%", "%alice@example.com%"]
+  });
+});
+
+test("SqlBuilder appendQueryIf and setIf conditionally append fragments", async () => {
+  const registry = {
+    getSql(name) {
+      if (name === "fragments.active") return "AND active = :active";
+      throw new Error(`unexpected query: ${name}`);
+    }
+  };
+  const builder = new SqlBuilder(
+    registry,
+    "users.update",
+    "UPDATE users SET /*#set*/ WHERE id = :id /*#where*/"
+  );
+
+  builder
+    .addParams({ id: 1 })
+    .setIf(true, "name = :name", { name: "Alice" })
+    .setIf(false, "missing = :missing")
+    .appendQueryIf("where", true, "fragments.active", { active: true })
+    .appendQueryIf("where", false, "fragments.missing", { missing: true });
+  builder.at("where").appendQueryIf(false, "fragments.alsoMissing", { missing: true });
+
+  assert.deepStrictEqual(builder.build(), {
+    sql: "UPDATE users SET name = ? WHERE id = ? AND active = ?",
+    values: ["Alice", 1, true]
   });
 });
 

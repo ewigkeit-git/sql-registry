@@ -122,11 +122,17 @@ const scriptCases = [
   ["append-if-dynamic-slot", "appendIf(params.slot, true, 'AND id = :id', { id: 1 })", /slot name must be a string literal/],
   ["append-if-dynamic-sql", "appendIf('where', true, params.sql, { id: 1 })", /append SQL must be a string literal/],
   ["append-if-dynamic-bind-object", "appendIf('where', true, 'AND id = :id', params.binds)", /append params must be an object literal/],
+  ["append-query-if-dynamic-slot", "appendQueryIf(params.slot, true, 'fragments.active', { active: true })", /slot name must be a string literal/],
+  ["append-query-if-dynamic-query", "appendQueryIf('where', true, params.queryName, { active: true })", /query name must be a string literal/],
+  ["append-query-if-empty", "appendQueryIf('where', true, 'fragments.active', {})", /must not be empty/],
+  ["append-query-if-dynamic-bind-object", "appendQueryIf('where', true, 'fragments.active', params.binds)", /appendQuery params must be an object literal/],
   ["template-sql", "append('where', `AND id = ${params.id}`, { id: 1 })", /append SQL must be a string literal/],
   ["append-missing", "append('where', 'AND id = :id')", /missing/],
   ["append-extra", "append('where', 'AND active = 1', { active: true })", /not used/],
   ["set-dynamic-sql", "set(params.sql, { name: 'A' })", /set SQL must be a string literal/],
   ["set-dynamic-bind-object", "set('name = :name', params.binds)", /set params must be an object literal/],
+  ["set-if-dynamic-sql", "setIf(true, params.sql, { name: 'A' })", /set SQL must be a string literal/],
+  ["set-if-dynamic-bind-object", "setIf(true, 'name = :name', params.binds)", /set params must be an object literal/],
   ["set-missing", "set('name = :name')", /missing/],
   ["set-extra", "set('name = :name', { name: 'A', active: true })", /not used/],
   ["append-query-empty", "appendQuery('where', 'fragments.active', {})", /must not be empty/],
@@ -137,6 +143,9 @@ const scriptCases = [
   ["at-unknown-method", "at('where').remove('AND id = :id', { id: 1 })", /unsupported helper method/],
   ["at-append-if-dynamic-sql", "at('where').appendIf(true, params.sql, { id: 1 })", /append SQL must be a string literal/],
   ["at-append-if-dynamic-bind-object", "at('where').appendIf(true, 'AND id = :id', params.binds)", /append params must be an object literal/],
+  ["at-append-query-if-dynamic-query", "at('where').appendQueryIf(true, params.queryName, { active: true })", /query name must be a string literal/],
+  ["at-append-query-if-empty", "at('where').appendQueryIf(true, 'fragments.active', {})", /must not be empty/],
+  ["at-append-query-if-dynamic-bind-object", "at('where').appendQueryIf(true, 'fragments.active', params.binds)", /appendQuery params must be an object literal/],
   ["member-call-non-helper", "params.id.toString()", /method calls are only allowed/],
   ["for-loop", "for (let i = 0; i < 1; i++) { append('where', 'AND id = :id', { id: i }) }", /loop statements/],
   ["for-of", "for (const id of params.ids) { append('where', 'AND id = :id', { id }) }", /loop statements/],
@@ -234,5 +243,5 @@ test("SqlBuilder rejects more than 100 invalid builder and append patterns", asy
     );
   }
 
-  assert.strictEqual(count, 124);
+  assert.strictEqual(count, 133);
 });
