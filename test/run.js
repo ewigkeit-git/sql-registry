@@ -1,6 +1,7 @@
 const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
+const cli = require("../dist/cli/index");
 const { bindSql, getCompiledSqlCacheSize } = require("../dist/lib/binder");
 const { LruCache } = require("../dist/lib/lru-cache");
 const { validateBindParams } = require("../dist/lib/bind-validator");
@@ -41,6 +42,15 @@ function getNodeSqliteDatabaseSync() {
 
 function plainRows(rows) {
   return rows.map(row => Object.fromEntries(Object.entries(row)));
+}
+
+function writeFixture(filePath, content) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, content.trimStart());
+}
+
+function removeFixtureDir(dirPath) {
+  fs.rmSync(dirPath, { recursive: true, force: true });
 }
 
 test("bindSql replaces named params outside string literals", async () => {
@@ -125,6 +135,60 @@ test("bindSql ignores params inside comments", async () => {
     sql: "select ? as id -- :ignored\nwhere id = ?",
     values: [7, 7]
   });
+});
+
+test("CLI validate accepts markdown registry directories", async () => {
+  const fixtureDir = path.join(__dirname, ".tmp-cli", "valid");
+  removeFixtureDir(fixtureDir);
+
+  try {
+    writeFixture(path.join(fixtureDir, "queries.md"), `
+## users.find
+param: id:integer - User id
+
+\`\`\`sql
+SELECT * FROM users WHERE id = :id
+\`\`\`
+`);
+
+    const output = { stdout: "", stderr: "" };
+    const stdout = { write: text => { output.stdout += text; } };
+    const stderr = { write: text => { output.stderr += text; } };
+    const status = cli.run(["validate", fixtureDir], stdout, stderr);
+
+    assert.strictEqual(status, 0);
+    assert.match(output.stdout, /ok - 1 file\(s\), 1 query\(ies\)/);
+  } finally {
+    removeFixtureDir(fixtureDir);
+  }
+});
+
+test("CLI validate reports structure errors", async () => {
+  const fixtureDir = path.join(__dirname, ".tmp-cli", "invalid");
+  removeFixtureDir(fixtureDir);
+
+  try {
+    writeFixture(path.join(fixtureDir, "queries.md"), `
+## users.find
+param: id:integer - User id
+
+\`\`\`sql
+SELECT * FROM users WHERE id = :id AND name = :name
+\`\`\`
+`);
+
+    const output = { stdout: "", stderr: "" };
+    const stdout = { write: text => { output.stdout += text; } };
+    const stderr = { write: text => { output.stderr += text; } };
+    const status = cli.run(["validate", "--json", fixtureDir], stdout, stderr);
+
+    assert.strictEqual(status, 1);
+    const payload = JSON.parse(output.stdout);
+    assert.strictEqual(payload.ok, false);
+    assert.ok(payload.errors.some(error => error.includes("params used in SQL but not declared in meta: name")));
+  } finally {
+    removeFixtureDir(fixtureDir);
+  }
 });
 
 test("extractNamedParamTokens returns bind positions from the shared parser", async () => {

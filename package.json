@@ -1,10 +1,13 @@
 {
   "name": "sql-registry",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Lightweight SQL registry with named parameters",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "type": "commonjs",
+  "bin": {
+    "sql-registry": "dist/cli/index.js"
+  },
   "scripts": {
     "build": "tsc",
     "bench": "npm run build && node benchmark/micro.js",

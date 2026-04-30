@@ -89,6 +89,13 @@ const stmt = registry.builder("users.search", {
 }).build();
 ```
 
+Validate registry files from the command line:
+
+```sh
+npx sql-registry validate ./queries
+npx sql-registry validate --json ./queries
+```
+
 ---
 
 ## What this is (and is not)
