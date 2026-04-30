@@ -1323,6 +1323,137 @@ test("SqlRegistry loads builder and orderable metadata from markdown", async () 
   });
 });
 
+test("SqlRegistry reload refreshes loaded markdown files", async () => {
+  const fixturePath = path.join(__dirname, ".tmp", "registry-reload.md");
+
+  fs.mkdirSync(path.dirname(fixturePath), { recursive: true });
+  fs.writeFileSync(fixturePath, [
+    "## users.find",
+    "param: id:int - User id",
+    "",
+    "```sql",
+    "SELECT * FROM users WHERE id = :id",
+    "```",
+    ""
+  ].join("\n"), "utf8");
+
+  const registry = new SqlRegistry({ dialect: "pg" });
+  registry.loadFile(fixturePath);
+
+  assert.deepStrictEqual(registry.bind("users.find", { id: 1 }), {
+    sql: "SELECT * FROM users WHERE id = $1",
+    values: [1]
+  });
+
+  fs.writeFileSync(fixturePath, [
+    "## users.find",
+    "param: email:string - User email",
+    "",
+    "```sql",
+    "SELECT * FROM users WHERE email = :email",
+    "```",
+    "",
+    "## users.list",
+    "",
+    "```sql",
+    "SELECT * FROM users ORDER BY id",
+    "```",
+    ""
+  ].join("\n"), "utf8");
+
+  registry.reload();
+
+  assert.deepStrictEqual(registry.bind("users.find", { email: "a@example.com" }), {
+    sql: "SELECT * FROM users WHERE email = $1",
+    values: ["a@example.com"]
+  });
+  assert.deepStrictEqual(registry.bind("users.list"), {
+    sql: "SELECT * FROM users ORDER BY id",
+    values: []
+  });
+});
+
+test("SqlRegistry reload removes deleted markdown queries", async () => {
+  const fixturePath = path.join(__dirname, ".tmp", "registry-reload-delete.md");
+
+  fs.mkdirSync(path.dirname(fixturePath), { recursive: true });
+  fs.writeFileSync(fixturePath, [
+    "## users.find",
+    "param: id:int - User id",
+    "",
+    "```sql",
+    "SELECT * FROM users WHERE id = :id",
+    "```",
+    "",
+    "## users.list",
+    "",
+    "```sql",
+    "SELECT * FROM users",
+    "```",
+    ""
+  ].join("\n"), "utf8");
+
+  const registry = new SqlRegistry();
+  registry.loadFile(fixturePath);
+  assert.strictEqual(registry.has("users.list"), true);
+
+  fs.writeFileSync(fixturePath, [
+    "## users.find",
+    "param: id:int - User id",
+    "",
+    "```sql",
+    "SELECT * FROM users WHERE id = :id",
+    "```",
+    ""
+  ].join("\n"), "utf8");
+
+  registry.reload();
+
+  assert.strictEqual(registry.has("users.find"), true);
+  assert.strictEqual(registry.has("users.list"), false);
+});
+
+test("SqlRegistry reload keeps current registry when strict reload fails", async () => {
+  const fixturePath = path.join(__dirname, ".tmp", "registry-reload-invalid.md");
+
+  fs.mkdirSync(path.dirname(fixturePath), { recursive: true });
+  fs.writeFileSync(fixturePath, [
+    "## users.find",
+    "param: id:int - User id",
+    "",
+    "```sql",
+    "SELECT * FROM users WHERE id = :id",
+    "```",
+    ""
+  ].join("\n"), "utf8");
+
+  const registry = new SqlRegistry({ dialect: "pg" });
+  registry.loadFile(fixturePath);
+
+  fs.writeFileSync(fixturePath, [
+    "## users.find",
+    "param: id:int - User id",
+    "",
+    "```sql",
+    "SELECT * FROM users WHERE id = :id",
+    ""
+  ].join("\n"), "utf8");
+
+  assert.throws(
+    () => registry.reload(),
+    error => {
+      assert.match(error.message, /^structure error:/);
+      assert.match(error.errors.join("\n"), /unclosed fenced block/);
+      return true;
+    }
+  );
+
+  assert.deepStrictEqual(registry.bind("users.find", { id: 1 }), {
+    sql: "SELECT * FROM users WHERE id = $1",
+    values: [1]
+  });
+});
+
 test("SqlRegistry loads markdown list-style metadata", async () => {
   const fixtureDir = path.join(__dirname, ".tmp");
   fs.mkdirSync(fixtureDir, { recursive: true });

@@ -873,6 +873,7 @@ export class SqlRegistry {
   compiledSqlCacheSize?: number;
   queries: Record<string, QueryEntry>;
   files: string[];
+  private rootFiles: string[];
   private runtimeCache: Map<string, QueryRuntimeCache>;
 
   constructor(options: SqlRegistryOptions = {}) {
@@ -881,19 +882,11 @@ export class SqlRegistry {
     this.compiledSqlCacheSize = options.compiledSqlCacheSize;
     this.queries = {};
     this.files = [];
+    this.rootFiles = [];
     this.runtimeCache = new Map();
   }
 
-  loadFile(filePath: string) {
-    const result = parseMarkdownFile(filePath);
-
-    if (result.errors.length > 0 && this.strict) {
-      throw new SqlRegistryValidationError(
-        "failed to load markdown registry file",
-        result.errors
-      );
-    }
-
+  private mergeParsedFile(filePath: string, result: ParseMarkdownResult) {
     for (const [name, entry] of Object.entries(result.queries)) {
       if (this.queries[name]) {
         const error = `duplicate query name across registry: ${name}`;
@@ -905,13 +898,72 @@ export class SqlRegistry {
       this.queries[name] = entry;
     }
 
-    this.runtimeCache.clear();
-
     for (const file of result.files || [path.resolve(filePath)]) {
       if (!this.files.includes(file)) {
         this.files.push(file);
       }
     }
+
+    return this;
+  }
+
+  loadFile(filePath: string) {
+    const fullPath = path.resolve(filePath);
+    const result = parseMarkdownFile(fullPath);
+
+    if (result.errors.length > 0 && this.strict) {
+      throw new SqlRegistryValidationError(
+        "failed to load markdown registry file",
+        result.errors
+      );
+    }
+
+    this.mergeParsedFile(fullPath, result);
+    this.runtimeCache.clear();
+
+    if (!this.rootFiles.includes(fullPath)) {
+      this.rootFiles.push(fullPath);
+    }
+
+    return this;
+  }
+
+  reload() {
+    const rootFiles = [...this.rootFiles];
+    const nextQueries: Record<string, QueryEntry> = {};
+    const nextFiles: string[] = [];
+    const errors: string[] = [];
+
+    for (const filePath of rootFiles) {
+      const result = parseMarkdownFile(filePath);
+      errors.push(...result.errors);
+
+      for (const [name, entry] of Object.entries(result.queries)) {
+        if (nextQueries[name]) {
+          const error = `structure error: duplicate query name across registry: ${name}`;
+          errors.push(error);
+          if (!this.strict) continue;
+        }
+        nextQueries[name] = entry;
+      }
+
+      for (const file of result.files || [filePath]) {
+        if (!nextFiles.includes(file)) {
+          nextFiles.push(file);
+        }
+      }
+    }
+
+    if (errors.length > 0 && this.strict) {
+      throw new SqlRegistryValidationError(
+        "failed to reload markdown registry files",
+        errors
+      );
+    }
+
+    this.queries = nextQueries;
+    this.files = nextFiles;
+    this.runtimeCache.clear();
 
     return this;
   }

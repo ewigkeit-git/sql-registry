@@ -107,6 +107,7 @@ export class SqlRegistry {
   files: string[];
 
   loadFile(filePath: string): this;
+  reload(): this;
   has(name: string): boolean;
   get(name: string): QueryEntry;
   getMeta(name: string): QueryMeta;
