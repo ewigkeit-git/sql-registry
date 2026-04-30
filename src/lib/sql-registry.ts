@@ -61,11 +61,13 @@ export type ImportDirectiveError = {
 export type SqlRegistryOptions = {
   strict?: boolean;
   dialect?: string;
+  compiledSqlCacheSize?: number;
 };
 
 export type BindOptions = {
   strict?: boolean;
   dialect?: string;
+  compiledSqlCacheSize?: number;
 };
 
 export type BuilderOptions = {
@@ -73,6 +75,7 @@ export type BuilderOptions = {
   context?: Record<string, unknown>;
   orderable?: Record<string, string>;
   dialect?: string;
+  compiledSqlCacheSize?: number;
   runScript?: boolean;
   maxLimit?: number;
   maxOffset?: number;
@@ -867,6 +870,7 @@ export function resolveSql(entry: QueryEntry | null | undefined, dialect: string
 export class SqlRegistry {
   strict: boolean;
   dialect: string;
+  compiledSqlCacheSize?: number;
   queries: Record<string, QueryEntry>;
   files: string[];
   private runtimeCache: Map<string, QueryRuntimeCache>;
@@ -874,6 +878,7 @@ export class SqlRegistry {
   constructor(options: SqlRegistryOptions = {}) {
     this.strict = options.strict !== false;
     this.dialect = normalizeDialect(options.dialect);
+    this.compiledSqlCacheSize = options.compiledSqlCacheSize;
     this.queries = {};
     this.files = [];
     this.runtimeCache = new Map();
@@ -992,6 +997,7 @@ export class SqlRegistry {
     return bindSql(runtime.sql, params, {
       dialect: this.dialect,
       queryName: name,
+      compiledSqlCacheSize: this.compiledSqlCacheSize,
       ...options
     });
   }
@@ -1009,6 +1015,7 @@ export class SqlRegistry {
     const builder = new SqlBuilder(this, name, runtime.sql, {
       ...options,
       dialect: options.dialect || this.dialect,
+      compiledSqlCacheSize: options.compiledSqlCacheSize ?? this.compiledSqlCacheSize,
       orderable,
       paramTypes: runtime.paramTypes,
       allowedSlots: runtime.allowedSlots,

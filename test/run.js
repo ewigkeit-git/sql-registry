@@ -1,7 +1,8 @@
 const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
-const { bindSql } = require("../dist/lib/binder");
+const { bindSql, getCompiledSqlCacheSize } = require("../dist/lib/binder");
+const { LruCache } = require("../dist/lib/lru-cache");
 const { validateBindParams } = require("../dist/lib/bind-validator");
 const { compileSql } = require("../dist/lib/sql-compiler");
 const { extractNamedParamTokens } = require("../dist/lib/param-parser");
@@ -52,6 +53,66 @@ test("bindSql replaces named params outside string literals", async () => {
     sql: "select ':literal' as x, ? as id",
     values: [1]
   });
+});
+
+test("LruCache evicts the least recently used item", async () => {
+  const cache = new LruCache(2);
+
+  cache.set("a", 1);
+  cache.set("b", 2);
+  assert.strictEqual(cache.get("a"), 1);
+  cache.set("c", 3);
+
+  assert.strictEqual(cache.get("b"), undefined);
+  assert.strictEqual(cache.get("a"), 1);
+  assert.strictEqual(cache.get("c"), 3);
+  assert.strictEqual(cache.size, 2);
+
+  cache.resize(1);
+  assert.strictEqual(cache.get("a"), undefined);
+  assert.strictEqual(cache.get("c"), 3);
+  assert.strictEqual(cache.size, 1);
+});
+
+test("bindSql compiled template cache is bounded", async () => {
+  for (let i = 0; i < 4200; i++) {
+    bindSql(`select :id as id_${i}`, { id: i });
+  }
+
+  assert.ok(getCompiledSqlCacheSize() <= 4096);
+});
+
+test("bindSql compiled template cache size is configurable", async () => {
+  for (let i = 0; i < 20; i++) {
+    bindSql(`select :id as configurable_${i}`, { id: i }, { compiledSqlCacheSize: 5 });
+  }
+
+  assert.ok(getCompiledSqlCacheSize() <= 5);
+
+  bindSql("select :id as restore_default_cache_size", { id: 1 }, { compiledSqlCacheSize: 4096 });
+});
+
+test("SqlRegistry propagates compiled SQL cache size option", async () => {
+  const registry = new SqlRegistry({ dialect: "pg", compiledSqlCacheSize: 3 });
+  registry.queries["cache.option"] = {
+    meta: {
+      params: [
+        { name: "id", type: "integer", description: "User id" }
+      ]
+    },
+    sql: {
+      default: "SELECT :id AS id"
+    }
+  };
+
+  for (let i = 0; i < 10; i++) {
+    registry.bind("cache.option", { id: i });
+    bindSql(`select :id as registry_option_${i}`, { id: i });
+  }
+
+  assert.ok(getCompiledSqlCacheSize() <= 3);
+
+  bindSql("select :id as restore_default_cache_size_again", { id: 1 }, { compiledSqlCacheSize: 4096 });
 });
 
 test("bindSql ignores params inside comments", async () => {

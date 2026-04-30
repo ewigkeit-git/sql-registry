@@ -4,8 +4,8 @@ const { SqlRegistry, SqlRegistryAdapter } = require("../dist");
 const WARMUP_ITERATIONS = 20_000;
 const DEFAULT_ITERATIONS = 200_000;
 
-function createRegistry() {
-  const registry = new SqlRegistry({ strict: false, dialect: "pg" });
+function createRegistry(options = {}) {
+  const registry = new SqlRegistry({ strict: false, dialect: "pg", ...options });
 
   registry.queries["users.findById"] = {
     meta: {
@@ -118,7 +118,9 @@ function printResults(results) {
 function main() {
   const iterations = Number(process.env.BENCH_ITERATIONS || DEFAULT_ITERATIONS);
   const registry = createRegistry();
+  const customCacheRegistry = createRegistry({ compiledSqlCacheSize: 8192 });
   const adapter = new SqlRegistryAdapter(registry);
+  const customCacheAdapter = new SqlRegistryAdapter(customCacheRegistry);
 
   const staticParams = { id: 42, unused: true };
   const dynamicOptions = {
@@ -138,17 +140,39 @@ function main() {
     benchmark("registry.bind static", iterations, i => {
       registry.bind("users.findById", { id: (i % 1000) + 1 });
     }),
+    benchmark("registry.bind static custom cache", iterations, i => {
+      customCacheRegistry.bind("users.findById", { id: (i % 1000) + 1 });
+    }),
+    benchmark("registry.bind static per-call cache", iterations, i => {
+      registry.bind(
+        "users.findById",
+        { id: (i % 1000) + 1 },
+        { compiledSqlCacheSize: 8192 }
+      );
+    }),
     benchmark("adapter.build static", iterations, i => {
       staticParams.id = (i % 1000) + 1;
       adapter.build("users.findById", { params: staticParams });
+    }),
+    benchmark("adapter.build static custom cache", iterations, i => {
+      staticParams.id = (i % 1000) + 1;
+      customCacheAdapter.build("users.findById", { params: staticParams });
     }),
     benchmark("registry.builder dynamic", iterations, i => {
       dynamicOptions.params.limit = (i % 50) + 1;
       registry.builder("users.search", dynamicOptions).build();
     }),
+    benchmark("registry.builder dynamic custom cache", iterations, i => {
+      dynamicOptions.params.limit = (i % 50) + 1;
+      customCacheRegistry.builder("users.search", dynamicOptions).build();
+    }),
     benchmark("adapter.build dynamic", iterations, i => {
       dynamicOptions.params.offset = i % 100;
       adapter.build("users.search", dynamicOptions);
+    }),
+    benchmark("adapter.build dynamic custom cache", iterations, i => {
+      dynamicOptions.params.offset = i % 100;
+      customCacheAdapter.build("users.search", dynamicOptions);
     })
   ];
 

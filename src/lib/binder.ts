@@ -2,6 +2,7 @@ import { extractNamedParamTokens } from "./param-parser";
 import { SqlBindError, validateBindParams } from "./bind-validator";
 import { applyCompiledSqlTemplate, compileSqlTemplate, CompiledSqlTemplate } from "./sql-compiler";
 import { getPlaceholderStyle, normalizeStatementDialect } from "./dialect";
+import { LruCache } from "./lru-cache";
 
 export type SqlStatement = {
   sql: string;
@@ -12,6 +13,7 @@ export type BindSqlOptions = {
   strict?: boolean;
   dialect?: string;
   queryName?: string;
+  compiledSqlCacheSize?: number;
 };
 
 type CachedSqlTemplate = {
@@ -19,7 +21,13 @@ type CachedSqlTemplate = {
   template: CompiledSqlTemplate;
 };
 
-const compiledSqlCache = new Map<string, CachedSqlTemplate>();
+const MAX_COMPILED_SQL_CACHE_SIZE = 4096;
+const compiledSqlCache = new LruCache<string, CachedSqlTemplate>(MAX_COMPILED_SQL_CACHE_SIZE);
+
+function applyCompiledSqlCacheSize(maxSize?: number) {
+  if (maxSize === undefined) return;
+  compiledSqlCache.resize(maxSize);
+}
 
 function cacheKey(sql: string, dialect: string) {
   return `${dialect}\0${sql}`;
@@ -43,6 +51,7 @@ function getCompiledSqlTemplate(sql: string, dialect: string): CachedSqlTemplate
 }
 
 export function bindSql(sql: string, params: Record<string, unknown> = {}, options: BindSqlOptions = {}): SqlStatement {
+  applyCompiledSqlCacheSize(options.compiledSqlCacheSize);
   const dialect = normalizeStatementDialect(options.dialect);
   const compiled = getCompiledSqlTemplate(sql, dialect);
 
@@ -51,6 +60,10 @@ export function bindSql(sql: string, params: Record<string, unknown> = {}, optio
     dialect
   });
   return applyCompiledSqlTemplate(compiled.template, params);
+}
+
+export function getCompiledSqlCacheSize() {
+  return compiledSqlCache.size;
 }
 
 export { SqlBindError };

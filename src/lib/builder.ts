@@ -49,6 +49,7 @@ type SqlRegistryLike = {
 
 export type SqlBuilderOptions = {
   dialect?: string;
+  compiledSqlCacheSize?: number;
   orderable?: Record<string, string>;
   maxLimit?: number;
   maxOffset?: number;
@@ -60,6 +61,7 @@ export type SqlBuilderOptions = {
 export type BindOptions = {
   strict?: boolean;
   dialect?: string;
+  compiledSqlCacheSize?: number;
 };
 
 export type ExplainOptions = BindOptions & {
@@ -741,6 +743,7 @@ export class SqlBuilder {
   slots: Record<string, string[]>;
   slotJoiners: Record<string, string>;
   dialect: string;
+  compiledSqlCacheSize?: number;
   orderable: Record<string, string>;
   allowedSlots: Set<string>;
   maxLimit: number;
@@ -758,6 +761,7 @@ export class SqlBuilder {
     this.slotJoiners = {};
 
     this.dialect = options.dialect || "sqlite";
+    this.compiledSqlCacheSize = options.compiledSqlCacheSize;
     this.orderable = options.orderable || {};
     this.allowedSlots = options.allowedSlots instanceof Set
       ? new Set(options.allowedSlots)
@@ -1030,6 +1034,7 @@ export class SqlBuilder {
     return bindSql(sql, this.params, {
       dialect: this.dialect,
       queryName: this.queryName,
+      compiledSqlCacheSize: this.compiledSqlCacheSize,
       ...options
     });
   }

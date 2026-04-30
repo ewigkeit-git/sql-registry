@@ -41,11 +41,13 @@ export type QueryEntry = {
 export type SqlRegistryOptions = {
   strict?: boolean;
   dialect?: Dialect | "sqlite3" | "mysql2" | "postgres" | "postgresql";
+  compiledSqlCacheSize?: number;
 };
 
 export type BindOptions = {
   strict?: boolean;
   dialect?: SqlRegistryOptions["dialect"];
+  compiledSqlCacheSize?: number;
 };
 
 export type BuilderOptions = {
@@ -53,6 +55,7 @@ export type BuilderOptions = {
   context?: Record<string, unknown>;
   orderable?: Record<string, string>;
   dialect?: SqlRegistryOptions["dialect"];
+  compiledSqlCacheSize?: number;
   runScript?: boolean;
   maxLimit?: number;
   maxOffset?: number;
