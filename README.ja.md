@@ -1,538 +1,33 @@
 # sql-registry
 
-SQL を Markdown で資産化して管理するための軽量ライブラリです。
+> **ステータス:** sql-registry は pre-1.0 です。公開 API、Markdown 形式、アダプターの挙動、ビルダーのヘルパーは今後破壊的に変更される可能性があります。現段階でも利用できますが、導入時はバージョンを固定し、更新時はリリース内容を確認してください。
 
-SQL をアプリケーションコードから分離しつつ、パラメータ定義、型、説明、DB 方言ごとの SQL、条件付き SQL 組み立てを 1 つの Markdown registry として扱えます。
+SQL をアプリケーションコードのあちこちに散らさず、読みやすくレビューしやすい Markdown の資産として管理するための軽量ライブラリです。
 
-## 何が嬉しいのか
+sql-registry は、構造化された Markdown に SQL、パラメータ定義、型、説明、データベースごとの方言差分、最小限の動的 SQL をまとめます。
 
-アプリケーションコードの中に SQL 文字列が散らばると、次のような問題が起きがちです。
+## 利用する理由
 
-- SQL の一覧性が低い
-- パラメータの意味や型がコードを追わないと分からない
-- `ORDER BY ${sort}` のような危ない動的 SQL が生まれやすい
-- SQLite / PostgreSQL / MySQL の差分が if 文に埋もれる
-- SQL のレビューがアプリケーションロジックの差分に混ざる
+実際のアプリケーションでは、SQL が次のような状態になりがちです。
 
-sql-registry では、SQL を Markdown に寄せます。
+- SQL 文字列がサービスやリポジトリ層に散らばる。
+- パラメータの意味や型が SQL から離れてしまう。
+- 動的 SQL が文字列連結で増えていく。
+- `ORDER BY ${sort}` のような危険な実装が入りやすい。
+- SQLite / PostgreSQL / MySQL の違いがアプリケーション側の分岐に埋もれる。
+- SQL レビューがアプリケーションロジックのレビューと混ざる。
 
-````md
-## users.search
+sql-registry は、SQL を Markdown レジストリにまとめ、クエリ本文、メタデータ、限定的なビルダー処理を同じ場所で扱えるようにします。
 
-description: Search users with filters, sorting, and paging.
+## 設計方針
 
-param: name:string - Partial user name
-param: status:string - User status
-param: sort:string - Sort key
-param: limit:int - Page size
-param: offset:int - Page offset
+sql-registry は、SQL を生成コードではなく、レビュー可能な静的資産として扱います。
 
-orderable:
-  createdAt: u.created_at
-  name: u.name
-  status: u.status
+アプリケーション側の入力は、SQL 構文そのものではなく、バインド値、許可リスト済みの並び替えキー、検証されたページング値として渡されます。SQL の構造は Markdown レジストリに残し、実行時に変わる部分は明示的に制限します。
 
-```sql
-SELECT
-  u.id,
-  u.name,
-  u.status,
-  u.created_at
-FROM users u
-WHERE u.deleted = 0
-/*#where*/
-/*#order*/
-/*#paging*/
-```
+このライブラリが担当するのは、named parameter の bind、パラメータ定義の検証、方言別 SQL の選択、限定された SQL 断片の追加です。SQL 構文の最終的な正しさ、制約違反、ロック、タイムアウト、権限エラーなどはデータベースとドライバーの責務として扱います。
 
-```ts builder
-if (params.name) {
-  append('where', 'AND u.name LIKE :name', {
-    name: `%${params.name}%`
-  });
-}
-
-if (params.status) {
-  append('where', 'AND u.status = :status', {
-    status: params.status
-  });
-}
-
-orderBy('order', params.sort || 'createdAt', true);
-limit('paging', params.limit);
-offset('paging', params.offset);
-```
-````
-
-アプリケーション側は SQL ID と params を渡すだけです。
-
-```ts
-const stmt = registry.builder("users.search", {
-  params: {
-    name: "Alice",
-    status: "active",
-    sort: "name",
-    limit: 20,
-    offset: 0
-  }
-}).build();
-```
-
-生成される statement:
-
-```js
-{
-  sql: [
-    "SELECT",
-    "  u.id,",
-    "  u.name,",
-    "  u.status,",
-    "  u.created_at",
-    "FROM users u",
-    "WHERE u.deleted = 0",
-    "AND u.name LIKE ?",
-    "AND u.status = ?",
-    "ORDER BY u.name ASC",
-    "LIMIT ?",
-    "OFFSET ?"
-  ].join("\n"),
-  values: ["%Alice%", "active", 20, 0]
-}
-```
-
-## 責務の範囲
-
-sql-registry は SQL パーサではありません。
-
-- 構造エラーは `loadFile()` 時点で検出します
-- 入力エラーは DB 実行前に検出します
-- DB エラーは adapter / driver に任せます
-- SQL 構文の正しさは DB / driver に任せます
-- `SELECT` が 1 行返すか複数行返すかは SQL の作りに任せます
-- adapter は driver の結果を薄く返します
-- 1 行だけ欲しい場合は、SQL 側で条件や `LIMIT 1` を設計し、呼び出し側で結果配列の先頭を扱ってください
-
-sql-registry が扱うのは、named parameter の bind、param metadata の検証、builder による安全な SQL 断片追加、dialect 別 SQL の選択です。
-
-構造エラーとは、Markdown registry として成立しないものです。たとえば query 名の重複、import 循環、未定義 query への `appendQuery()`、builder script の parse error、param metadata と SQL / builder の不整合などです。
-
-入力エラーとは、実行時に渡された `params` / `context` / builder helper 引数の問題です。たとえば型不一致、必須 bind param の不足、未知 param、未許可の `orderBy` key、`limit()` / `offset()` の範囲外値などです。
-
-DB エラーとは、SQL 構文エラー、制約違反、接続エラー、ロック、タイムアウト、権限エラーなど DB / driver が判断するものです。sql-registry はこれらを SQL パースで事前判定せず、adapter が driver のエラーをそのまま扱います。
-
-SQL は読みやすい Markdown に残り、実行時入力は bind values と allowlist に閉じ込められます。
-
-## ORM と共存できる
-
-sql-registry は ORM を置き換えるためのライブラリではありません。
-
-普段の CRUD や単純な関連取得は、Prisma、Sequelize、TypeORM、Drizzle など既存の ORM / query builder に任せたままで構いません。
-
-一方で、実務では次のような SQL が出てきます。
-
-- レポート用の複雑な集計 SQL
-- パフォーマンス調整された手書き SQL
-- CTE や window function を使う検索
-- DB 方言ごとに最適化した SQL
-- SQL 単体でレビュー・管理したい業務クエリ
-- ORM の抽象化に乗せるとかえって読みにくくなるクエリ
-
-sql-registry は、そのような SQL を Markdown registry として管理し、既存の ORM と並べて使うための道具です。
-
-```js
-// 普段の単純な取得は ORM
-const user = await prisma.user.findUnique({
-  where: {
-    id: userId
-  }
-});
-
-// 複雑な検索やレポートは sql-registry
-const stmt = registry.builder("reports.monthlySales", {
-  params: {
-    from,
-    to,
-    region
-  }
-}).build();
-
-const rows = await prisma.$queryRawUnsafe(stmt.sql, ...stmt.values);
-```
-
-この例では、sql-registry が生成した SQL と bind values を渡すために `$queryRawUnsafe` を使っています。ユーザー入力を SQL 文字列へ連結する用途では使わないでください。
-
-Sequelize を使っている場合は adapter 経由で実行できます。
-
-```js
-const adapter = new SequelizeAdapter(sequelize, registry);
-
-const rows = await adapter.query("reports.monthlySales", {
-  params: {
-    from,
-    to,
-    region
-  }
-});
-```
-
-既存の ORM を活かしながら、手書き SQL だけを見通しよく管理できます。
-
-## フォルダ分けと import で SQL 資産を管理する
-
-SQL が増えてきたら、1 つの巨大な Markdown にまとめるのではなく、ドメインや用途ごとに分けて管理できます。
-
-例:
-
-```txt
-sql/
-  registry.md
-  fragments/
-    user.md
-    tenant.md
-  users/
-    search.md
-    mutation.md
-  reports/
-    monthly-sales.md
-    active-users.md
-```
-
-エントリポイントになる `registry.md` で各ファイルを import します。
-
-```md
-@import "./fragments/user.md" as fragments.user
-@import "./fragments/tenant.md" as fragments.tenant
-@import "./users/search.md" as users
-@import "./users/mutation.md" as users
-@import "./reports/monthly-sales.md" as reports
-@import "./reports/active-users.md" as reports
-```
-
-読み込み側:
-
-```js
-const registry = new SqlRegistry({
-  dialect: "postgres"
-});
-
-registry.loadFile("./sql/registry.md");
-
-const stmt = registry.builder("users.search", {
-  params: {
-    name: "Alice",
-    status: "active"
-  },
-  context: {
-    tenantId: 10
-  }
-}).build();
-```
-
-`users/search.md`:
-
-````md
-## search
-
-description: Search users in a tenant.
-
-param: name:string - Partial user name
-param: status:string - User status
-param: tenantId:int - Tenant ID
-param: sort:string - Sort key
-param: limit:int - Page size
-param: offset:int - Page offset
-
-orderable:
-  createdAt: u.created_at
-  name: u.name
-  status: u.status
-
-```sql
-SELECT
-  u.id,
-  u.name,
-  u.status,
-  u.created_at
-FROM users u
-WHERE u.deleted = 0
-/*#tenant*/
-/*#where*/
-/*#order*/
-/*#paging*/
-```
-
-```ts builder
-appendQuery('tenant', 'fragments.tenant.required', {
-  tenantId: context.tenantId
-});
-
-if (params.name) {
-  append('where', 'AND u.name LIKE :name', {
-    name: `%${params.name}%`
-  });
-}
-
-if (params.status) {
-  append('where', 'AND u.status = :status', {
-    status: params.status
-  });
-}
-
-orderBy('order', params.sort || 'createdAt', true);
-limit('paging', params.limit);
-offset('paging', params.offset);
-```
-````
-
-`fragments/tenant.md`:
-
-````md
-## required
-
-description: Restrict rows to one tenant.
-
-param: tenantId:int - Tenant ID
-
-```sql
-AND tenant_id = :tenantId
-```
-````
-
-`registry.md` で `@import "./users/search.md" as users` としているので、`users/search.md` 内の `## search` は `users.search` として登録されます。
-
-同じように `@import "./fragments/tenant.md" as fragments.tenant` としているため、`fragments/tenant.md` 内の `## required` は `fragments.tenant.required` として参照できます。
-
-この形にしておくと、SQL を次のように整理できます。
-
-- `fragments/`: 再利用する WHERE 句や JOIN 断片
-- `users/`: ユーザー機能の検索・更新 SQL
-- `reports/`: レポートや集計 SQL
-- `registry.md`: import の入口
-
-SQL の量が増えても、アプリケーションコード側は `registry.loadFile("./sql/registry.md")` のままです。
-
-## `appendQuery` で SQL fragment を再利用する
-
-`appendQuery()` を使うと、別の SQL ID として定義した fragment を slot に追加できます。
-
-tenant 条件、権限制御、共通 JOIN、よく使う WHERE 句、サブクエリなどを再利用したいときに便利です。
-
-`fragments/user.md`:
-
-````md
-## active
-
-description: Restrict to active users.
-
-param: active:bool - Active flag
-
-```sql
-AND u.active = :active
-```
-
-## notDeleted
-
-description: Exclude deleted users.
-
-```sql
-AND u.deleted = 0
-```
-````
-
-`users/search.md`:
-
-````md
-## searchActive
-
-param: active:bool - Active flag
-param: name:string - Partial user name
-
-```sql
-SELECT
-  u.id,
-  u.name,
-  u.active
-FROM users u
-/*#where*/
-```
-
-```js builder
-appendQuery('where', 'fragments.user.notDeleted');
-
-// 第3引数に object literal を渡すと、fragment 側の named parameter に bind できます。
-if (params.active != null) {
-  appendQuery('where', 'fragments.user.active', {
-    active: params.active
-  });
-}
-
-if (params.name) {
-  append('where', 'AND u.name LIKE :name', {
-    name: `%${params.name}%`
-  });
-}
-```
-````
-
-`registry.md`:
-
-```md
-@import "./fragments/user.md" as fragments.user
-@import "./users/search.md" as users
-```
-
-実行:
-
-```js
-const stmt = registry.builder("users.searchActive", {
-  params: {
-    active: true,
-    name: "Alice"
-  }
-}).build();
-```
-
-生成される SQL:
-
-```sql
-SELECT
-  u.id,
-  u.name,
-  u.active
-FROM users u
-WHERE u.deleted = 0
-AND u.active = ?
-AND u.name LIKE ?
-```
-
-```js
-stmt.values;
-// [true, "%Alice%"]
-```
-
-`appendQuery()` で追加される fragment も通常の SQL と同じく named parameter を持てます。bind values は呼び出し側で渡した object literal から生成されます。
-
-### サブクエリを部品化する
-
-`appendQuery()` は WHERE 句だけでなく、サブクエリの差し込みにも使えます。
-
-`fragments/orders.md`:
-
-````md
-## latestByUser
-
-description: Latest order per user.
-
-```sql
-LEFT JOIN (
-  SELECT
-    user_id,
-    MAX(created_at) AS latest_order_at
-  FROM orders
-  GROUP BY user_id
-) latest_order ON latest_order.user_id = u.id
-```
-````
-
-`users/search-with-order.md`:
-
-````md
-## searchWithLatestOrder
-
-param: status:string - User status
-
-```sql
-SELECT
-  u.id,
-  u.name,
-  latest_order.latest_order_at
-FROM users u
-/*#join*/
-WHERE u.deleted = 0
-/*#where*/
-```
-
-```js builder
-appendQuery('join', 'fragments.orders.latestByUser');
-
-if (params.status) {
-  append('where', 'AND u.status = :status', {
-    status: params.status
-  });
-}
-```
-````
-
-`registry.md`:
-
-```md
-@import "./fragments/orders.md" as fragments.orders
-@import "./users/search-with-order.md" as users
-```
-
-このように、複雑な JOIN やサブクエリを部品として分け、必要な query から再利用できます。
-
-## 特徴
-
-- Markdown で SQL registry を管理
-- `param:` に説明と型を記述
-- 実行時 params の型検証
-- SQLite / PostgreSQL / MySQL 向けの dialect 別 SQL
-- `js builder` / `ts builder` による条件付き SQL 組み立て
-- named parameter `:id` を dialect に応じた positional bind (`?` / `$1`) に変換
-- `ORDER BY` を `orderable` allowlist で制御
-- `limit` / `offset` の数値化と上限チェック
-- 未定義 param / 未定義 slot を検出
-- `EXPLAIN` statement の生成
-- better-sqlite3 / node:sqlite / node-postgres / mysql2 / MariaDB / Sequelize / TypeORM adapter
-- 既存 ORM / query builder と併用しやすい
-- TypeScript 対応
-
-## Before / After
-
-よくある危ない書き方:
-
-```js
-const sql = `
-  SELECT *
-  FROM users
-  WHERE deleted = 0
-  ${name ? `AND name LIKE '%${name}%'` : ""}
-  ORDER BY ${sort}
-  LIMIT ${limit}
-`;
-```
-
-sql-registry での書き方:
-
-````md
-```sql
-SELECT *
-FROM users
-WHERE deleted = 0
-/*#where*/
-/*#order*/
-/*#paging*/
-```
-
-```js builder
-if (params.name) {
-  append('where', 'AND name LIKE :name', {
-    name: `%${params.name}%`
-  });
-}
-
-orderBy('order', params.sort || 'createdAt');
-limit('paging', params.limit);
-```
-````
-
-違いは、ユーザー入力が SQL 構文へ直接混ざらないことです。
-
-- `name` は bind value
-- `sort` は `orderable` にある key のみ
-- `limit` は非負整数に変換され、上限チェックされる
-- SQL 断片は builder 内の静的文字列のみ
+ORM を置き換えるものではありません。通常の CRUD や単純な関連取得は Prisma、Sequelize、TypeORM、Drizzle などに任せ、複雑な集計、レポート、性能調整された手書き SQL、方言ごとに最適化した SQL を sql-registry で管理する、という使い分けを想定しています。
 
 ## インストール
 
@@ -540,121 +35,12 @@ limit('paging', params.limit);
 npm install sql-registry
 ```
 
-## クイックスタート
+## 基本例
 
-```js
-const { SqlRegistry } = require("sql-registry");
-
-const registry = new SqlRegistry({
-  dialect: "sqlite"
-});
-
-registry.loadFile("./sql/users.md");
-
-const stmt = registry.bind("users.findById", {
-  id: 1
-});
-
-console.log(stmt);
-// {
-//   sql: "SELECT * FROM users WHERE id = ?",
-//   values: [1]
-// }
-```
-
-## Markdown registry
-
-SQL は Markdown の `##` 見出しごとに定義します。
+`sql/users.md` のようなレジストリファイルを作成します。
 
 ````md
-## users.findById - Find one user by ID.
-
-param: id:int - User ID
-
-```sql
-SELECT
-  id,
-  name,
-  status,
-  created_at
-FROM users
-WHERE id = :id
-```
-````
-
-`param:` は次の形式で書けます。
-
-```md
-param: name:type - description
-```
-
-型は省略できます。
-
-```md
-param: id - User ID
-param: active:bool - Active flag
-param: limit:int - Page size
-```
-
-## Param types
-
-対応している型は次の通りです。
-
-- `string` / `text`
-- `number` / `float`
-- `integer` / `int`
-- `boolean` / `bool`
-- `date` / `datetime` / `timestamp`
-- `json`
-- `any`
-
-型が指定されている param は、`bind()` や `builder()` 実行時に検証されます。
-
-```md
-param: id:int - User ID
-```
-
-```js
-registry.bind("users.findById", {
-  id: "1"
-});
-// throws: invalid type for param: id
-```
-
-## Dialect 別 SQL
-
-SQL fence に dialect を指定できます。
-
-````md
-## users.findById
-
-param: id:int - User ID
-
-```sql
-SELECT * FROM users WHERE id = :id
-```
-
-```sql postgres
-SELECT * FROM app_users WHERE id = :id
-```
-````
-
-`postgres` / `postgresql` は内部的に `pg` として扱われます。
-
-```js
-const registry = new SqlRegistry({
-  dialect: "postgresql"
-});
-```
-
-## Builder
-
-条件付き SQL は `builder` ブロックで組み立てられます。
-
-SQL 側には slot marker を置きます。
-
-````md
-## users.search
+## users.search - Search users with filters and paging
 
 param: name:string - Partial user name
 param: status:string - User status
@@ -680,7 +66,7 @@ WHERE u.deleted = 0
 /*#paging*/
 ```
 
-```js builder
+```ts builder
 if (params.name) {
   append('where', 'AND u.name LIKE :name', {
     name: `%${params.name}%`
@@ -699,183 +85,14 @@ offset('paging', params.offset);
 ```
 ````
 
-実行例:
+アプリケーション側では SQL ID とパラメータを渡します。
 
 ```js
-const stmt = registry.builder("users.search", {
-  params: {
-    name: "Alice",
-    status: "active",
-    sort: "name",
-    limit: 20,
-    offset: 40
-  }
-}).build();
-```
+const { SqlRegistry } = require("sql-registry");
 
-## TypeScript builder
-
-builder ブロックは JavaScript だけでなく TypeScript でも書けます。
-
-````md
-```ts builder
-const active: boolean = params.active;
-
-if (active) {
-  append('where', 'AND active = :active', {
-    active
-  });
-}
-```
-````
-
-`ts builder` は実行前に JavaScript へ変換され、その後は通常の builder と同じ限定インタプリタで実行されます。
-
-## Builder の安全制約
-
-builder は任意の JavaScript を `eval` する仕組みではありません。
-
-利用できる構文と helper は制限されています。
-
-- `append()` の SQL 断片は文字列リテラルのみ
-- `append()` / `appendQuery()` / `set()` の bind params は object literal のみ
-- `set()` の SQL 断片は文字列リテラルのみ
-- `appendQuery()` の第3引数は省略可能。ただし指定する場合は空 object 不可
-- `appendQuery()` の bind params は、参照先 fragment の named parameter に存在する key のみ
-- `append()` できる slot は SQL 内に存在する `/*#slot*/` のみ
-- `orderBy()` は `orderable` に定義された key のみ
-- `limit()` / `offset()` は非負整数のみ
-- `limit()` / `offset()` は上限チェックあり
-- `limit()` / `offset()` の bind param は slot ごとに内部名を分けるため、複数 slot で衝突しません
-- builder 内で読む `params.xxx` は、`param: xxx:type - description` の宣言が必須
-- builder 内で生成する値は `param({ generatedValue })` で bind でき、この場合は外部入力ではないため `param:` 宣言は不要
-- `for` / `while` / `do while` などの反復処理は不可
-- `params.sql` や template literal で SQL 断片を動的生成することは不可
-- `process` などの外部 global にはアクセス不可
-
-## Security model
-
-sql-registry では、Markdown registry を信頼済みのソース資産として扱います。
-
-つまり `.md` ファイルはユーザー投稿コンテンツではなく、ソースコードや設計書と同じく、開発者が管理する成果物です。
-
-一方で、実行時に渡される `params` や `context` は外部入力を含みうるものとして扱います。
-
-このライブラリの主な防御対象は、実行時入力が SQL 構文へ混入することです。
-
-そのため、実行時入力は次の経路に制限されます。
-
-- bind values
-- slot によって制御された SQL 断片
-- `orderable` によって許可された ORDER BY key
-- 型検証済み params
-
-Markdown registry が漏れるリスクは SQL injection ではなく、ソースコードや設計書、DB 構造が漏れるリスクとして扱ってください。
-
-## Adapter
-
-Adapter は SQL の組み立てと driver / ORM への受け渡しだけを行います。
-transaction の開始、commit、rollback は driver / ORM 側で管理してください。
-
-| 対象 | Adapter | 通常の使い方 | transaction 中の使い方 | 補足 |
-| --- | --- | --- | --- | --- |
-| better-sqlite3 | `BetterSqlite3Adapter` | `new BetterSqlite3Adapter(db, registry)` -> `adapter.query("users.search", { params })` | `db.transaction(() => adapter.query("users.search", { params }))()` のように同じ `db` 上で実行 | `queryOptions.method` / `method` で `all`、`get`、`run`、`iterate` を指定できます。 |
-| node:sqlite | `NodeSqliteAdapter` | `new NodeSqliteAdapter(db, registry)` -> `adapter.query("users.search", { params })` | 同じ `DatabaseSync` で `BEGIN` / `COMMIT` / `ROLLBACK` を管理して実行 | `queryOptions.method` / `method` で `all`、`get`、`run`、`iterate` を指定できます。 |
-| node-postgres | `PgAdapter` | `new PgAdapter(poolOrClient, registry)` -> `adapter.query("users.search", { params })` | pool から取得した transaction 中の `client` を `adapter.query(client, "users.search", { params })` として渡す | `queryOptions.text` / `queryOptions.values` は sql-registry が管理します。 |
-| mysql2 | `Mysql2Adapter` | `new Mysql2Adapter(poolOrConnection, registry)` -> `adapter.query("users.search", { params })` | pool から取得した transaction 中の `connection` を `adapter.query(connection, "users.search", { params })` として渡す | 既定は `execute`。`method: "query"` も指定できます。 |
-| MariaDB | `MariadbAdapter` | `new MariadbAdapter(poolOrConnection, registry)` -> `adapter.query("users.search", { params })` | pool から取得した transaction 中の `connection` を `adapter.query(connection, "users.search", { params })` として渡す | `queryOptions.sql` / `queryOptions.values` は sql-registry が管理します。 |
-| Sequelize | `SequelizeAdapter` | `new SequelizeAdapter(sequelize, registry)` -> `adapter.query("users.search", { params })` | `adapter.query("users.search", { params, queryOptions: { transaction } })` として Sequelize の transaction を渡す | `queryOptions.replacements` は sql-registry が管理します。 |
-| TypeORM | `TypeOrmAdapter` | `new TypeOrmAdapter(dataSource, registry)` -> `adapter.query("users.search", { params })` | transaction callback の `manager` または `queryRunner` を `adapter.query(manager, "users.search", { params })` として渡す | `DataSource` を渡した場合は `dataSource.manager.query()` を使います。 |
-
-### better-sqlite3
-
-```js
-const { SqlRegistry, BetterSqlite3Adapter } = require("sql-registry");
-
-const registry = new SqlRegistry();
+const registry = new SqlRegistry({ dialect: "pg" });
 registry.loadFile("./sql/users.md");
 
-const adapter = new BetterSqlite3Adapter(db, registry);
-
-const rows = await adapter.query("users.search", {
-  params: {
-    status: "active"
-  }
-});
-```
-
-### node:sqlite
-
-```js
-const { DatabaseSync } = require("node:sqlite");
-const { SqlRegistry, NodeSqliteAdapter } = require("sql-registry");
-
-const db = new DatabaseSync(":memory:");
-const registry = new SqlRegistry();
-registry.loadFile("./sql/users.md");
-
-const adapter = new NodeSqliteAdapter(db, registry);
-
-const rows = await adapter.query("users.search", {
-  params: {
-    status: "active"
-  }
-});
-```
-
-### MariaDB
-
-```js
-const mariadb = require("mariadb");
-const { SqlRegistry, MariadbAdapter } = require("sql-registry");
-
-const pool = mariadb.createPool({
-  host: "localhost",
-  user: "app",
-  password: "secret",
-  database: "app"
-});
-
-const registry = new SqlRegistry({
-  dialect: "mysql"
-});
-registry.loadFile("./sql/users.md");
-
-const adapter = new MariadbAdapter(pool, registry);
-
-const rows = await adapter.query("users.search", {
-  params: {
-    status: "active"
-  }
-});
-```
-
-### Sequelize
-
-```js
-const { SqlRegistry, SequelizeAdapter } = require("sql-registry");
-
-const registry = new SqlRegistry({
-  dialect: "postgres"
-});
-registry.loadFile("./sql/users.md");
-
-const adapter = new SequelizeAdapter(sequelize, registry);
-
-const rows = await adapter.query("users.findById", {
-  params: {
-    id: 1
-  }
-});
-```
-
-`SequelizeAdapter` では `queryOptions.replacements` はライブラリ側が管理します。
-
-## EXPLAIN
-
-組み立てた SQL から `EXPLAIN` 用 statement を生成できます。
-
-```js
 const stmt = registry.builder("users.search", {
   params: {
     name: "Alice",
@@ -884,144 +101,231 @@ const stmt = registry.builder("users.search", {
     limit: 20,
     offset: 0
   }
-}).buildExplain();
+}).build();
+
+console.log(stmt.sql);
+console.log(stmt.values);
 ```
 
-PostgreSQL では `analyze: true` を指定できます。
-
-```js
-const stmt = registry.builder("users.search", {
-  params: {
-    name: "Alice"
-  }
-}).buildExplain({
-  analyze: true
-});
-```
-
-生成例:
+PostgreSQL 方言では、次のように番号付きプレースホルダーが生成されます。
 
 ```js
 {
-  sql: "EXPLAIN ANALYZE SELECT ... WHERE u.name LIKE ?",
-  values: ["%Alice%"]
+  sql: "SELECT ... WHERE u.deleted = 0\nAND u.name LIKE $1\nAND u.status = $2\nORDER BY u.name ASC\nLIMIT $3\nOFFSET $4",
+  values: ["%Alice%", "active", 20, 0]
 }
 ```
 
-adapter 経由でも実行できます。
+## 静的 SQL
+
+builder が不要なクエリは `bind()` で組み立てられます。
+
+````md
+## users.findById
+
+param: id:int - User id
+
+```sql
+SELECT * FROM users WHERE id = :id
+```
+````
 
 ```js
-const result = await adapter.explain("users.search", {
-  params: {
-    name: "Alice"
-  },
-  explainOptions: {
-    analyze: true
-  }
-});
+const stmt = registry.bind("users.findById", { id: 123 });
 ```
 
-SQL registry に登録した query をそのまま `EXPLAIN` できるため、複雑な検索やレポート SQL の実行計画を確認しやすくなります。
+## Markdown 形式
 
-## API 概要
+クエリは `##` 見出しで定義します。
 
-### `new SqlRegistry(options)`
-
-```js
-const registry = new SqlRegistry({
-  strict: true,
-  dialect: "sqlite"
-});
+```md
+## query.name - Optional description
 ```
 
-### `registry.loadFile(filePath)`
+主なメタデータ:
 
-Markdown registry を読み込みます。
+- `description: ...`
+- `tags: reporting, users`
+- `param: name:type - Description`
+- `orderable:` による `ORDER BY` の許可リスト
+- `sql` のフェンス付きコードブロック
+- `ts builder` / `js builder` のフェンス付きコードブロック
+
+方言別 SQL も書けます。
+
+````md
+```sql pg
+SELECT * FROM users WHERE id = :id
+```
+
+```sql mysql
+SELECT * FROM users WHERE id = :id
+```
+````
+
+対応する方言エイリアスは `sqlite`, `sqlite3`, `mysql`, `mysql2`, `pg`, `postgres`, `postgresql` です。
+
+## ビルダーとスロット
+
+スロットマーカーは、ビルダーが SQL 断片を差し込める場所を表します。
+
+```sql
+SELECT * FROM users
+/*#where*/
+/*#order*/
+/*#paging*/
+```
+
+主なヘルパー:
+
+- `append(slotName, sql, params)`
+- `appendIf(slotName, condition, sql, params)`
+- `appendQuery(slotName, queryName, params)`
+- `appendQueryIf(slotName, condition, queryName, params)`
+- `at(slotName).append(...)`
+- `set(sql, params)` / `setIf(...)`
+- `orderBy(slotName, key, asc)`
+- `limit(slotName, value)`
+- `offset(slotName, value)`
+
+`where` スロットは `AND ...` から始まる断片を扱えます。スロットより前にトップレベルの `WHERE` がない場合、最初の断片は `WHERE ...` として生成されます。
+
+## 安全性の考え方
+
+sql-registry は、ユーザー入力を SQL 構文に直接連結しない設計です。
+
+実行時入力が影響できる範囲:
+
+- バインド値
+- 宣言済みかつ型検証されたパラメータ
+- 許可リストに含まれる `ORDER BY` key
+- 検証された `LIMIT` / `OFFSET`
+- レジストリに静的文字列として書かれた SQL 断片
+
+builder script は、汎用的な JavaScript 実行環境ではありません。
+
+許可されるもの:
+
+- `if` 文
+- 単純な式
+- `const` / `let`
+- `params` / `context` の参照
+- sql-registry の builder helper
+
+拒否されるもの:
+
+- ループ
+- 任意の関数呼び出し
+- 動的な helper 名
+- computed helper method
+- 動的に組み立てた SQL 断片
+- `process` などのグローバル参照
+- 深い制御構造
+
+## CLI
+
+レジストリファイルは CLI で検証できます。
+
+```sh
+npx sql-registry validate ./sql
+npx sql-registry validate --dialect pg ./sql
+npx sql-registry validate --json ./sql
+```
+
+重複したクエリ名、未宣言パラメータ、不正な builder script、未知の `appendQuery()` 参照などを検出します。
+
+## import
+
+Markdown レジストリから別ファイルを import できます。
+
+```md
+@import "./fragments/user.md" as fragments.user
+@import "./users/search.md" as users
+@import "./reports/monthly-sales.md" as reports
+```
+
+import されたファイル内の見出しには namespace が付きます。たとえば `./users/search.md` の `## search` は `users.search` になります。
+
+## アダプター
+
+アダプターは実行用の SQL 文を組み立て、ドライバーや ORM に渡します。トランザクションの開始、commit、rollback は行いません。必要な場合はドライバー / ORM 側でトランザクションを管理し、そのトランザクションに紐づいた executor をアダプターに渡してください。
+
+| 対象 | アダプター |
+| --- | --- |
+| better-sqlite3 | `BetterSqlite3Adapter` |
+| node:sqlite | `NodeSqliteAdapter` |
+| node-postgres | `PgAdapter` |
+| mysql2 | `Mysql2Adapter` |
+| MariaDB | `MariadbAdapter` |
+| Sequelize | `SequelizeAdapter` |
+| TypeORM | `TypeOrmAdapter` |
+
+node-postgres の例:
 
 ```js
+const { SqlRegistry, PgAdapter } = require("sql-registry");
+
+const registry = new SqlRegistry({ dialect: "pg" });
 registry.loadFile("./sql/users.md");
-```
 
-### `registry.bind(name, params, options)`
-
-SQL ID を指定して bind 済み statement を作ります。
-
-```js
-const stmt = registry.bind("users.findById", {
-  id: 1
-});
-```
-
-### `registry.builder(name, options)`
-
-builder script を実行し、動的 SQL を組み立てます。
-
-```js
-const builder = registry.builder("users.search", {
+const adapter = new PgAdapter(pool, registry);
+const result = await adapter.query("users.search", {
   params: {
-    name: "Alice"
-  },
-  context: {
-    isAdmin: false
+    name: "Alice",
+    status: "active",
+    sort: "createdAt",
+    limit: 20,
+    offset: 0
   }
 });
-
-const stmt = builder.build();
 ```
 
-### `builder.buildExplain(options)`
+トランザクション用の client を明示的に渡すこともできます。
 
-`EXPLAIN` 用 statement を作ります。
+```js
+const adapter = new PgAdapter(registry);
+const result = await adapter.query(client, "users.search", {
+  params: {
+    name: "Alice",
+    sort: "createdAt",
+    limit: 20,
+    offset: 0
+  }
+});
+```
+
+## EXPLAIN
+
+`buildExplain()` で EXPLAIN 用の statement を生成できます。
 
 ```js
 const stmt = registry.builder("users.search", {
   params: {
-    name: "Alice"
+    sort: "createdAt",
+    limit: 20
   }
-}).buildExplain({
-  analyze: true
-});
+}).buildExplain({ analyze: false });
 ```
 
-## Import
+アダプターからも、対応している executor に対して `explain(...)` を呼べます。
 
-Markdown 内で別ファイルを import できます。
+## 対象外のこと
 
-```md
-@import "./common.md"
-@import "./user.md" as user
-```
+sql-registry は、次の役割を担うためのものではありません。
 
-namespace を指定すると、読み込まれる query 名に prefix が付きます。
+- ORM
+- 汎用クエリビルダー
+- SQL パーサー
+- マイグレーションツール
+- それ単体でデータベースアクセスを保護する境界
 
-```md
-@import "./user.md" as user
-```
+既存のドライバー、ORM、query builder と併用しながら、明示的に管理したい SQL をレジストリとして扱うための小さなライブラリです。
 
-`user.md` 側:
+## プロジェクト状態
 
-```md
-## findById
-```
+- 現在の package version: `0.3.0`
+- 実行形式: TypeScript 型定義付きの CommonJS package
+- License: MIT
+- API 安定性: pre-1.0 のため、破壊的変更が入る可能性があります
 
-読み込み後:
-
-```txt
-user.findById
-```
-
-## TypeScript
-
-TypeScript 利用者向けに型定義を同梱しています。
-
-```ts
-import { SqlRegistry } from "sql-registry";
-
-const registry = new SqlRegistry({
-  dialect: "sqlite"
-});
-```
-
-## License
-
-MIT
+English: [README.md](./README.md)

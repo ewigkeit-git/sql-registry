@@ -1,34 +1,46 @@
 # sql-registry
 
-Stop scattering SQL across your codebase.
-Treat SQL as a structured, versioned asset in Markdown.
+> **Status:** sql-registry is pre-1.0. The public API, Markdown format, adapter behavior, and builder helpers may still change in breaking ways. It is usable today, but pin the package version and review release notes before upgrading.
 
-👉 Turn existing SQL into structured Markdown with AI, then keep it maintainable as your system evolves.
+Keep SQL as a readable, reviewable asset instead of scattering it through application code.
 
-sql-registry is a lightweight library for managing SQL in structured Markdown, with safe parameter binding and minimal, controlled dynamic SQL.
+sql-registry is a lightweight TypeScript/JavaScript library for storing SQL in structured Markdown, binding named parameters safely, and adding a small amount of controlled dynamic SQL when a query needs filters, sorting, paging, or reusable fragments.
 
-Define SQL, parameters, types, descriptions, and conditional logic in one place — and keep it readable and reviewable.
+## Why
 
----
+In many codebases, SQL slowly becomes hard to maintain:
 
-## Why?
+- SQL strings are spread across services and repositories.
+- Parameter meaning and expected types are not documented near the query.
+- Dynamic SQL grows from string concatenation.
+- `ORDER BY ${sort}` and similar patterns become injection risks.
+- Dialect-specific SQL is hidden inside application conditionals.
+- SQL review is mixed with unrelated application logic.
 
-In real projects, SQL often ends up scattered in application code:
+sql-registry keeps query text, parameter metadata, dialect variants, and limited builder logic in Markdown files that can be reviewed like any other source file.
 
-- Hard to see all queries in one place
-- Parameter meaning and types are unclear
-- Unsafe dynamic SQL (e.g. `ORDER BY ${sort}`)
-- Dialect differences hidden in conditionals
-- SQL review mixed with application logic
+## Philosophy
 
-sql-registry moves SQL into Markdown and keeps it readable, structured, and safe.
+sql-registry treats SQL as a reviewable static asset, not generated code.
 
----
+Application input is not allowed to become SQL syntax directly. Runtime values enter as bound values, allowlisted sort keys, and validated paging values. The shape of the SQL stays in the Markdown registry; the parts that change at runtime are explicit and constrained.
 
-## Example
+The library is responsible for named-parameter binding, parameter metadata validation, dialect-specific SQL selection, and limited SQL fragment insertion. Final SQL syntax, constraints, locks, timeouts, permission errors, and execution behavior remain the responsibility of the database and driver.
+
+It is not meant to replace an ORM. Use Prisma, Sequelize, TypeORM, Drizzle, or your usual query layer for routine CRUD and simple relation loading. Use sql-registry for complex reports, tuned handwritten SQL, dialect-specific queries, and SQL that benefits from being reviewed as its own artifact.
+
+## Install
+
+```sh
+npm install sql-registry
+```
+
+## Quick Example
+
+Create a registry file, for example `sql/users.md`:
 
 ````md
-## users.search
+## users.search - Search users with filters and paging
 
 param: name:string - Partial user name
 param: status:string - User status
@@ -52,7 +64,6 @@ WHERE u.deleted = 0
 /*#where*/
 /*#order*/
 /*#paging*/
-
 ```
 
 ```ts builder
@@ -72,12 +83,16 @@ orderBy('order', params.sort || 'createdAt', true);
 limit('paging', params.limit);
 offset('paging', params.offset);
 ```
-
 ````
 
-Usage:
+Load and build it:
 
 ```js
+const { SqlRegistry } = require("sql-registry");
+
+const registry = new SqlRegistry({ dialect: "pg" });
+registry.loadFile("./sql/users.md");
+
 const stmt = registry.builder("users.search", {
   params: {
     name: "Alice",
@@ -87,134 +102,258 @@ const stmt = registry.builder("users.search", {
     offset: 0
   }
 }).build();
+
+console.log(stmt.sql);
+console.log(stmt.values);
 ```
 
-Validate registry files from the command line:
+For PostgreSQL, the built statement uses numbered placeholders:
 
-```sh
-npx sql-registry validate ./queries
-npx sql-registry validate --json ./queries
+```js
+{
+  sql: [
+    "SELECT",
+    "  u.id,",
+    "  u.name,",
+    "  u.status,",
+    "  u.created_at",
+    "FROM users u",
+    "WHERE u.deleted = 0",
+    "AND u.name LIKE $1",
+    "AND u.status = $2",
+    "ORDER BY u.name ASC",
+    "LIMIT $3",
+    "OFFSET $4"
+  ].join("\n"),
+  values: ["%Alice%", "active", 20, 0]
+}
 ```
 
----
+## Static SQL
 
-## What this is (and is not)
+For a plain query without builder slots, use `bind()`:
 
-sql-registry is **not**:
+````md
+## users.findById
 
-- ❌ an ORM
-- ❌ a query builder
-- ❌ a full SQL parser
+param: id:int - User id
 
-Instead, it is:
+```sql
+SELECT * FROM users WHERE id = :id
+```
+````
 
-- ✅ SQL-first
-- ✅ Markdown-based SQL registry
-- ✅ Safe named parameter binding
-- ✅ Minimal, restricted dynamic SQL
+```js
+const stmt = registry.bind("users.findById", { id: 123 });
+```
 
----
+## Markdown Format
 
-## Design philosophy
+A query is defined by a second-level heading:
 
-SQL is treated as a **static asset**, not generated code.
+```md
+## query.name - Optional description
+```
 
-- SQL stays readable
-- Dynamic behavior is strictly limited
-- Runtime input never touches SQL syntax directly
+Supported metadata:
 
----
+- `description: ...`
+- `tags: reporting, users`
+- `param: name:type - Description`
+- `orderable:` mappings for safe `ORDER BY`
+- fenced `sql` blocks
+- fenced `ts builder` or `js builder` blocks
 
-## Safety model
+Dialect-specific SQL can be declared with a dialect name:
 
-Runtime input is constrained to:
+````md
+```sql pg
+SELECT * FROM users WHERE id = :id
+```
 
-- bind values
-- allowlisted `ORDER BY`
-- validated params
-- controlled SQL fragments
+```sql mysql
+SELECT * FROM users WHERE id = :id
+```
+````
 
-No string concatenation of user input into SQL.
+Supported dialect aliases include `sqlite`, `sqlite3`, `mysql`, `mysql2`, `pg`, `postgres`, and `postgresql`.
 
----
+## Builder Slots
 
-## Builder constraints (important)
+Slot markers define the only places where builder logic may insert SQL:
 
-The builder is **not general JavaScript execution**.
+```sql
+SELECT * FROM users
+/*#where*/
+/*#order*/
+/*#paging*/
+```
+
+The builder supports helper functions such as:
+
+- `append(slotName, sql, params)`
+- `appendIf(slotName, condition, sql, params)`
+- `appendQuery(slotName, queryName, params)`
+- `appendQueryIf(slotName, condition, queryName, params)`
+- `at(slotName).append(...)`
+- `set(sql, params)` and `setIf(...)`
+- `orderBy(slotName, key, asc)`
+- `limit(slotName, value)`
+- `offset(slotName, value)`
+
+`where` slots may start with `AND ...` fragments. If there is no top-level `WHERE` before the slot, sql-registry renders the first fragment as `WHERE ...`.
+
+## Safety Model
+
+sql-registry does not concatenate user input into SQL syntax.
+
+Runtime input is limited to:
+
+- bound values
+- declared and type-checked parameters
+- allowlisted `ORDER BY` keys
+- validated `LIMIT` and `OFFSET` values
+- SQL fragments written as static string literals in the registry
+
+The builder script is intentionally restricted. It is not general JavaScript execution.
 
 Allowed:
 
-- `if` conditions
-- helper functions (`append`, `appendQuery`, `orderBy`, `limit`, etc.)
+- `if` statements
+- simple expressions
+- local `const` / `let` values
+- access to `params` and `context`
+- sql-registry builder helpers
 
-Not allowed:
+Rejected:
 
-- loops (`for`, `while`)
+- loops
 - arbitrary function calls
-- dynamic SQL string construction
-- access to global objects (`process`, etc.)
+- dynamic helper names
+- computed helper methods
+- dynamic SQL fragment strings
+- access to globals such as `process`
+- deeply nested control flow
 
-👉 This keeps SQL predictable and safe.
+## Validation CLI
 
----
+Validate registry files before runtime:
 
-## Works with ORMs
+```sh
+npx sql-registry validate ./sql
+npx sql-registry validate --dialect pg ./sql
+npx sql-registry validate --json ./sql
+```
 
-sql-registry is designed to coexist with ORMs like Prisma or Sequelize.
+The validator reports structure errors such as duplicate query names, missing SQL blocks, undeclared parameters, invalid builder scripts, and unknown `appendQuery()` references.
 
-Use ORM for simple CRUD, and sql-registry for:
+## Imports
 
-- complex queries
-- reports
-- performance-critical SQL
-- dialect-specific queries
+Registry files can import other Markdown files:
 
----
+```md
+@import "./fragments/user.md" as fragments.user
+@import "./users/search.md" as users
+@import "./reports/monthly-sales.md" as reports
+```
 
-## Supported features
+Imported headings are namespaced, so `## search` in `./users/search.md` becomes `users.search`.
 
-- Markdown-based SQL registry
-- Parameter metadata (`param:` with type + description)
-- Runtime type validation
-- SQLite / PostgreSQL / MySQL dialect support
-- Safe named parameter binding (`:id`)
-- Controlled dynamic SQL via builder
-- `where` slots can start from `AND ...` fragments without `WHERE 1 = 1`
-- Optional slot marker descriptions (`/*#where - optional filters*/`)
-- `ORDER BY` allowlist
-- limit / offset validation
-- SQL fragment reuse via `appendQuery`
-- Adapter support (better-sqlite3, node-postgres, mysql2, MariaDB, Sequelize, TypeORM, etc.)
-- `EXPLAIN` query generation
+## Adapters
 
----
+Adapters build statements and pass them to the underlying driver or ORM. They do not start, commit, or roll back transactions; use your driver or ORM transaction API and pass the transaction-bound executor when needed.
 
-## Adapter Usage
+| Target | Adapter |
+| --- | --- |
+| better-sqlite3 | `BetterSqlite3Adapter` |
+| node:sqlite | `NodeSqliteAdapter` |
+| node-postgres | `PgAdapter` |
+| mysql2 | `Mysql2Adapter` |
+| MariaDB | `MariadbAdapter` |
+| Sequelize | `SequelizeAdapter` |
+| TypeORM | `TypeOrmAdapter` |
 
-Adapters do not begin, commit, or roll back transactions. Manage transactions in your driver or ORM, then pass the transaction-bound executor/connection to the adapter.
+Example with node-postgres:
 
-| Target | Adapter | Normal use | Transaction use |
-| --- | --- | --- | --- |
-| better-sqlite3 | `BetterSqlite3Adapter` | `new BetterSqlite3Adapter(db, registry)` | Run adapter calls inside `db.transaction(...)` on the same `db`. |
-| node:sqlite | `NodeSqliteAdapter` | `new NodeSqliteAdapter(db, registry)` | Manage `BEGIN` / `COMMIT` / `ROLLBACK` on the same `DatabaseSync`. |
-| node-postgres | `PgAdapter` | `new PgAdapter(poolOrClient, registry)` | Pass the checked-out transaction `client`: `adapter.query(client, "users.search", { params })`. |
-| mysql2 | `Mysql2Adapter` | `new Mysql2Adapter(poolOrConnection, registry)` | Pass the transaction `connection`: `adapter.query(connection, "users.search", { params })`. |
-| MariaDB | `MariadbAdapter` | `new MariadbAdapter(poolOrConnection, registry)` | Pass the transaction `connection`: `adapter.query(connection, "users.search", { params })`. |
-| Sequelize | `SequelizeAdapter` | `new SequelizeAdapter(sequelize, registry)` | Pass `queryOptions.transaction`: `adapter.query("users.search", { params, queryOptions: { transaction } })`. |
-| TypeORM | `TypeOrmAdapter` | `new TypeOrmAdapter(dataSource, registry)` | Pass the transaction `manager` or `queryRunner`: `adapter.query(manager, "users.search", { params })`. |
+```js
+const { SqlRegistry, PgAdapter } = require("sql-registry");
 
----
+const registry = new SqlRegistry({ dialect: "pg" });
+registry.loadFile("./sql/users.md");
 
-## Status
+const adapter = new PgAdapter(pool, registry);
+const result = await adapter.query("users.search", {
+  params: {
+    name: "Alice",
+    status: "active",
+    sort: "createdAt",
+    limit: 20,
+    offset: 0
+  }
+});
+```
 
-This project is **pre-1.0**.
+For an explicit transaction client:
 
-- APIs may change
-- Breaking changes may occur
-- Maintenance is best-effort
+```js
+const client = await pool.connect();
 
----
+try {
+  await client.query("BEGIN");
 
-## Documentation
+  const adapter = new PgAdapter(registry);
+  const result = await adapter.query(client, "users.search", {
+    params: {
+      name: "Alice",
+      sort: "createdAt",
+      limit: 20,
+      offset: 0
+    }
+  });
 
-- 🇯🇵 Japanese (full docs): ./README.ja.md
+  await client.query("COMMIT");
+} catch (err) {
+  await client.query("ROLLBACK");
+  throw err;
+} finally {
+  client.release();
+}
+```
+
+## EXPLAIN
+
+Build an explain statement without executing it:
+
+```js
+const stmt = registry.builder("users.search", {
+  params: {
+    sort: "createdAt",
+    limit: 20
+  }
+}).buildExplain({ analyze: false });
+```
+
+Adapters also expose `explain(...)` for supported executors.
+
+## What This Is Not
+
+sql-registry is not:
+
+- an ORM
+- a full query builder
+- a SQL parser
+- a migration tool
+- a database security boundary by itself
+
+It is meant to sit beside existing drivers, ORMs, and query builders for SQL that benefits from being explicit, reviewable, and centrally registered.
+
+## Project Status
+
+This project is early and intentionally small.
+
+- Current package version: `0.3.0`
+- Runtime: CommonJS package with TypeScript declarations
+- License: MIT
+- API stability: pre-1.0, breaking changes may occur
+
+See also: [Japanese README](./README.ja.md)
