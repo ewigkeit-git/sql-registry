@@ -1,5 +1,7 @@
 # sql-registry
 
+Repository: <https://github.com/ewigkeit-git/sql-registry>
+
 > **Status:** sql-registry is pre-1.0. The public API, Markdown format, adapter behavior, and builder helpers may still change in breaking ways. It is usable today, but pin the package version and review release notes before upgrading.
 
 Keep SQL as a readable, reviewable asset instead of scattering it through application code.

@@ -1,5 +1,7 @@
 # sql-registry
 
+Repository: <https://github.com/ewigkeit-git/sql-registry>
+
 > **ステータス:** sql-registry は pre-1.0 です。公開 API、Markdown 形式、アダプターの挙動、ビルダーのヘルパーは今後破壊的に変更される可能性があります。現段階でも利用できますが、導入時はバージョンを固定し、更新時はリリース内容を確認してください。
 
 SQL をアプリケーションコードのあちこちに散らさず、読みやすくレビューしやすい Markdown の資産として管理するための軽量ライブラリです。
