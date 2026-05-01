@@ -119,6 +119,12 @@ const extractionCases = [
     names: ["ids"]
   },
   {
+    name: "typeorm spread param",
+    sql: "where id in (:...ids)",
+    names: ["ids"],
+    tokenSlices: [":...ids"]
+  },
+  {
     name: "postgres jsonb cast does not create param",
     sql: "select :payload::jsonb",
     names: ["payload"]
@@ -205,6 +211,13 @@ for (const scenario of extractionCases) {
     );
 
     assert.deepStrictEqual(extractNamedParams(scenario.sql), scenario.names);
+
+    if (scenario.tokenSlices) {
+      assert.deepStrictEqual(
+        tokens.map(token => scenario.sql.slice(token.start, token.end)),
+        scenario.tokenSlices
+      );
+    }
   });
 }
 
@@ -279,6 +292,13 @@ test("bindSql uses the same param-parser token stream", () => {
   assert.deepStrictEqual(bindSql(sql, { id: 7, role: "admin" }), {
     sql: "select ':literal' as x, ? as id -- :ignored\nwhere id = ? and role = ?",
     values: [7, 7, "admin"]
+  });
+});
+
+test("bindSql treats typeorm spread params as one named param", () => {
+  assert.deepStrictEqual(bindSql("select * from users where id in (:...ids)", { ids: [1, 2, 3] }), {
+    sql: "select * from users where id in (?)",
+    values: [[1, 2, 3]]
   });
 });
 

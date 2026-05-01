@@ -120,7 +120,7 @@ export function stripQuotedAndCommented(sql: string) {
 
 export function extractNamedParamTokens(sql: string): NamedParamToken[] {
   const cleaned = stripQuotedAndCommented(sql);
-  const regex = /(^|[^:]):([A-Za-z_][A-Za-z0-9_]*)/g;
+  const regex = /(^|[^:]):(?:\.\.\.)?([A-Za-z_][A-Za-z0-9_]*)/g;
   const tokens: NamedParamToken[] = [];
 
   let match;
