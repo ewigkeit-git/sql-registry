@@ -330,4 +330,4 @@ sql-registry は、次の役割を担うためのものではありません。
 - License: MIT
 - API 安定性: pre-1.0 のため、破壊的変更が入る可能性があります
 
-English: [README.md](./README.md)
+English: [README.md](https://github.com/ewigkeit-git/sql-registry/blob/main/README.md)

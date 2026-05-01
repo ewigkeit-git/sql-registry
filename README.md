@@ -358,4 +358,4 @@ This project is early and intentionally small.
 - License: MIT
 - API stability: pre-1.0, breaking changes may occur
 
-See also: [Japanese README](./README.ja.md)
+See also: [Japanese README](https://github.com/ewigkeit-git/sql-registry/blob/main/README.ja.md)
