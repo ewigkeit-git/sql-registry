@@ -163,6 +163,43 @@ SELECT * FROM users WHERE id = :id
   }
 });
 
+test("CLI validate does not load imported files as separate roots", async () => {
+  const fixtureDir = path.join(__dirname, ".tmp-cli", "imported-roots");
+  removeFixtureDir(fixtureDir);
+
+  try {
+    writeFixture(path.join(fixtureDir, "main.md"), `
+@import "./fragments.md"
+
+## users.search
+param: active:boolean - Active flag
+
+\`\`\`sql
+SELECT * FROM users WHERE active = :active
+\`\`\`
+`);
+
+    writeFixture(path.join(fixtureDir, "fragments.md"), `
+## fragments.notDeleted
+
+\`\`\`sql
+AND deleted_at IS NULL
+\`\`\`
+`);
+
+    const output = { stdout: "", stderr: "" };
+    const stdout = { write: text => { output.stdout += text; } };
+    const stderr = { write: text => { output.stderr += text; } };
+    const status = cli.run(["validate", fixtureDir], stdout, stderr);
+
+    assert.strictEqual(status, 0);
+    assert.match(output.stdout, /ok - 2 file\(s\), 2 query\(ies\)/);
+    assert.strictEqual(output.stderr, "");
+  } finally {
+    removeFixtureDir(fixtureDir);
+  }
+});
+
 test("CLI validate reports structure errors", async () => {
   const fixtureDir = path.join(__dirname, ".tmp-cli", "invalid");
   removeFixtureDir(fixtureDir);

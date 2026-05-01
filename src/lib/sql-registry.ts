@@ -862,6 +862,12 @@ export function parseMarkdownFile(filePath: string): ParseMarkdownResult {
   };
 }
 
+export function collectMarkdownDependencyFiles(filePath: string): string[] {
+  const collectedFiles = new Set<string>();
+  resolveImports(filePath, [], "", collectedFiles);
+  return [...collectedFiles];
+}
+
 export function resolveSql(entry: QueryEntry | null | undefined, dialect: string) {
   if (!entry || !entry.sql) return null;
   return entry.sql[dialect] || entry.sql.default || null;

@@ -2,7 +2,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import { SqlRegistry, SqlRegistryValidationError } from "../lib/sql-registry";
+import { collectMarkdownDependencyFiles, SqlRegistry, SqlRegistryValidationError } from "../lib/sql-registry";
 
 type ValidateOptions = {
   dialect?: string;
@@ -81,6 +81,8 @@ export function validate(paths: string[], options: ValidateOptions): ValidateRes
   const errors: string[] = [];
   const files = paths.flatMap(inputPath => collectMarkdownFiles(inputPath, errors));
   const uniqueFiles = [...new Set(files)].sort();
+  const inputFileSet = new Set(uniqueFiles);
+  const importedInputFiles = new Set<string>();
   const registry = new SqlRegistry({
     dialect: options.dialect,
     strict: options.strict
@@ -91,6 +93,20 @@ export function validate(paths: string[], options: ValidateOptions): ValidateRes
   }
 
   for (const filePath of uniqueFiles) {
+    try {
+      for (const dependencyPath of collectMarkdownDependencyFiles(filePath)) {
+        if (dependencyPath !== filePath && inputFileSet.has(dependencyPath)) {
+          importedInputFiles.add(dependencyPath);
+        }
+      }
+    } catch {
+      // loadFile reports import errors with the usual validation context below.
+    }
+  }
+
+  const rootFiles = uniqueFiles.filter(filePath => !importedInputFiles.has(filePath));
+
+  for (const filePath of rootFiles) {
     try {
       registry.loadFile(filePath);
     } catch (err: unknown) {
