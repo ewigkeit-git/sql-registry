@@ -32,9 +32,10 @@ export type QueryMeta = {
 export type QueryEntry = {
   meta: QueryMeta;
   sql: Record<string, string>;
+  source?: QuerySourceInfo;
 };
 
-type QuerySourceInfo = {
+export type QuerySourceInfo = {
   filePath: string;
   queryLine: number;
   sqlLines: Record<string, number>;
@@ -634,20 +635,20 @@ export function parseMarkdownFile(filePath: string): ParseMarkdownResult {
       return;
     }
 
-    const entry: QueryEntry = {
-      meta: {
-        ...currentMeta,
-        params: currentParams
-      } as QueryMeta,
-      sql: currentSql
-    };
-
     const source = {
       filePath,
       queryLine: currentQueryLine,
       sqlLines: currentSqlLines,
       builderLine: currentBuilderLine,
       paramLines: currentParamLines
+    };
+    const entry: QueryEntry = {
+      meta: {
+        ...currentMeta,
+        params: currentParams
+      } as QueryMeta,
+      sql: currentSql,
+      source
     };
     errors.push(...validateEntry(currentName, entry, source));
     queries[currentName] = entry;

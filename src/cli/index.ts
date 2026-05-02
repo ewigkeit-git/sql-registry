@@ -2,11 +2,14 @@
 
 import * as fs from "fs";
 import * as path from "path";
+import { generateDocs } from "../gendoc/generate";
 import { collectMarkdownDependencyFiles, SqlRegistry, SqlRegistryValidationError } from "../lib/sql-registry";
 
 type ValidateOptions = {
   dialect?: string;
   json: boolean;
+  lang?: string;
+  out?: string;
   strict: boolean;
 };
 
@@ -21,11 +24,14 @@ function usage() {
   return [
     "Usage:",
     "  sql-registry validate [options] <file-or-directory...>",
+    "  sql-registry doc --out <file.html> [options] <file-or-directory...>",
     "",
     "Options:",
     "  --dialect <name>  Validate with a dialect alias such as sqlite, mysql, or pg",
     "  --json            Print machine-readable JSON",
+    "  --lang <code>     Generate docs UI labels in a supported language",
     "  --no-strict       Keep loading after validation errors when possible",
+    "  --out <file>      Write generated HTML docs to a file",
     "  -h, --help        Show help",
     "  -v, --version     Show version"
   ].join("\n");
@@ -162,6 +168,34 @@ function parseArgs(argv: string[]) {
       continue;
     }
 
+    if (arg === "--lang") {
+      const lang = argv[++i];
+      if (!lang) {
+        throw new Error("--lang requires a value");
+      }
+      options.lang = lang;
+      continue;
+    }
+
+    if (arg.startsWith("--lang=")) {
+      options.lang = arg.slice("--lang=".length);
+      continue;
+    }
+
+    if (arg === "--out") {
+      const out = argv[++i];
+      if (!out) {
+        throw new Error("--out requires a value");
+      }
+      options.out = out;
+      continue;
+    }
+
+    if (arg.startsWith("--out=")) {
+      options.out = arg.slice("--out=".length);
+      continue;
+    }
+
     if (arg === "--dialect") {
       const dialect = argv[++i];
       if (!dialect) {
@@ -206,9 +240,37 @@ export function run(argv = process.argv.slice(2), stdout = process.stdout, stder
     return 0;
   }
 
-  if (parsed.command !== "validate" || parsed.paths.length === 0) {
+  if (!["validate", "doc"].includes(parsed.command) || parsed.paths.length === 0) {
     stderr.write(`${usage()}\n`);
     return 2;
+  }
+
+  if (parsed.command === "doc") {
+    if (!parsed.options.out) {
+      stderr.write(`--out is required for doc\n\n${usage()}\n`);
+      return 2;
+    }
+
+    const result = generateDocs(parsed.paths, {
+      dialect: parsed.options.dialect,
+      lang: parsed.options.lang,
+      outFile: parsed.options.out,
+      strict: parsed.options.strict
+    });
+
+    if (parsed.options.json) {
+      stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    } else if (result.ok) {
+      stdout.write(`ok - wrote ${result.outFile} (${result.files.length} file(s), ${result.queries.length} query(ies))\n`);
+    } else {
+      stderr.write("sql-registry doc failed\n");
+      for (const error of result.errors) {
+        stderr.write(`- ${error}\n`);
+      }
+      stderr.write(`wrote ${result.outFile}\n`);
+    }
+
+    return result.ok ? 0 : 1;
   }
 
   const result = validate(parsed.paths, parsed.options);

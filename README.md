@@ -245,9 +245,14 @@ Validate registry files before runtime:
 npx sql-registry validate ./sql
 npx sql-registry validate --dialect pg ./sql
 npx sql-registry validate --json ./sql
+npx sql-registry doc --out sql-registry-docs.html ./sql
+npx sql-registry doc --lang ja --out sql-registry-docs.html ./sql
 ```
 
 The validator reports structure errors such as duplicate query names, missing SQL blocks, undeclared parameters, invalid builder scripts, and unknown `appendQuery()` references.
+
+The `doc` command writes a static HTML registry document with a SQL ID index, file list, query definitions, SQL blocks, params, builder scripts, `appendQuery()` links, and EXPLAIN snippets.
+Supported doc UI languages are `en`, `ja`, `ko`, `zh-CN`, `zh-TW`, `es`, `fr`, `de`, and `ru`.
 
 ## Imports
 

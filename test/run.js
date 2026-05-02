@@ -238,6 +238,39 @@ SELECT * FROM users WHERE id = :id AND name = :name
   }
 });
 
+test("CLI doc generates an HTML registry document from the example registry", async () => {
+  const exampleDir = path.join(__dirname, "..", "examples", "doc-demo");
+  const fixtureDir = path.join(__dirname, ".tmp-cli", "doc");
+  const outFile = path.join(fixtureDir, "docs.html");
+  removeFixtureDir(fixtureDir);
+
+  try {
+    const output = { stdout: "", stderr: "" };
+    const stdout = { write: text => { output.stdout += text; } };
+    const stderr = { write: text => { output.stderr += text; } };
+    const status = cli.run(["doc", "--lang", "ja", "--out", outFile, exampleDir], stdout, stderr);
+    const html = fs.readFileSync(outFile, "utf8");
+
+    assert.strictEqual(status, 0, output.stderr);
+    assert.match(output.stdout, /ok - wrote/);
+    assert.match(output.stdout, /5 file\(s\), 4 query\(ies\)/);
+    assert.match(html, /SQL ID/);
+    assert.match(html, /概要/);
+    assert.match(html, /パラメータ/);
+    assert.match(html, /物理名/);
+    assert.match(html, /論理名/);
+    assert.match(html, /captures\.search/);
+    assert.match(html, /captures\.updateReview/);
+    assert.match(html, /captures\.dailySummary/);
+    assert.match(html, /fragments\.captureHasLabel/);
+    assert.match(html, /href="#q-fragments-captureHasLabel"/);
+    assert.match(html, /Capture review list/);
+    assert.match(html, /EXPLAIN/);
+    assert.match(html, /<script>\(function\(\)\{var _0=/);
+  } finally {
+    removeFixtureDir(fixtureDir);
+  }
+});
 test("extractNamedParamTokens returns bind positions from the shared parser", async () => {
   const sql = "select ':literal' as x, :id as id -- :ignored\nwhere role = :role";
 
