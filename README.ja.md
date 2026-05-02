@@ -165,7 +165,7 @@ SELECT * FROM users WHERE id = :id
 ```
 ````
 
-対応する方言エイリアスは `sqlite`, `sqlite3`, `mysql`, `mysql2`, `pg`, `postgres`, `postgresql` です。
+対応する方言エイリアスは `sqlite`, `sqlite3`, `mysql`, `mysql2`, `mariadb`, `pg`, `postgres`, `postgresql` です。
 
 ## ビルダーとスロット
 

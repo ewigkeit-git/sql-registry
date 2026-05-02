@@ -18,7 +18,7 @@ const {
   SequelizeAdapter,
   TypeOrmAdapter
 } = require("../index");
-const { SqlBuilder, SqlBuilderError } = require("../dist/lib/builder");
+const { SqlBuilder, SqlBuilderError, compileBuilderScript, getFragmentParamCacheSize } = require("../dist/lib/builder");
 const { buildExplain } = require("../dist/lib/explain-builder");
 const {
   getExplainPrefix,
@@ -123,6 +123,16 @@ test("SqlRegistry propagates compiled SQL cache size option", async () => {
   assert.ok(getCompiledSqlCacheSize() <= 3);
 
   bindSql("select :id as restore_default_cache_size_again", { id: 1 }, { compiledSqlCacheSize: 4096 });
+});
+
+test("SqlBuilder fragment param cache is bounded", async () => {
+  for (let i = 0; i < 4200; i++) {
+    const paramName = `id_${i}`;
+    const builder = new SqlBuilder(null, "cache.fragment", "SELECT * FROM users /*#where*/");
+    builder.append("where", `AND id = :${paramName}`, { [paramName]: i });
+  }
+
+  assert.ok(getFragmentParamCacheSize() <= 4096);
 });
 
 test("bindSql ignores params inside comments", async () => {
@@ -291,11 +301,14 @@ test("bind input errors include query dialect and param context", async () => {
 test("dialect module owns statement dialect policies", async () => {
   assert.strictEqual(normalizeStatementDialect("default"), "sqlite");
   assert.strictEqual(normalizeStatementDialect("postgresql"), "pg");
+  assert.strictEqual(normalizeStatementDialect("mariadb"), "mysql");
   assert.strictEqual(getPlaceholderStyle("pg"), "numbered");
   assert.strictEqual(getPlaceholderStyle("mysql"), "question");
+  assert.strictEqual(getPlaceholderStyle("mariadb"), "question");
   assert.strictEqual(getExplainPrefix("sqlite", { analyze: true }), "EXPLAIN QUERY PLAN");
   assert.strictEqual(getExplainPrefix("postgres", { analyze: true }), "EXPLAIN ANALYZE");
   assert.strictEqual(getExplainPrefix("mysql", { analyze: true }), "EXPLAIN");
+  assert.strictEqual(getExplainPrefix("mariadb", { analyze: true }), "EXPLAIN");
 });
 
 test("compileSql owns placeholder conversion and value ordering", async () => {
@@ -461,6 +474,161 @@ test("runBuilderScript supports a whitelisted builder subset", async () => {
     sql: "SELECT * FROM users WHERE active = ? ORDER BY users.created_at DESC LIMIT ?\nOFFSET ?",
     values: [true, 10, 20]
   });
+});
+
+test("compiled builder ops match AST execution for supported scripts", async () => {
+  const registry = {
+    getSql(name) {
+      if (name === "fragments.active") return "AND active = :active";
+      throw new Error(`unexpected query: ${name}`);
+    }
+  };
+  const code = [
+    "if (params.name) {",
+    "  append('where', 'AND name LIKE :name', { name: `%${params.name}%` });",
+    "}",
+    "appendIf('where', params.active !== undefined, 'AND active = :active', { active: params.active });",
+    "at('where').appendQueryIf(params.active, 'fragments.active', { active: params.active });",
+    "setIf(params.displayName !== undefined, 'display_name = :displayName', { displayName: params.displayName });",
+    "orderBy('order', params.sort || 'createdAt', params.asc !== false);",
+    "limit('page', params.limit);",
+    "offset('page', params.offset);"
+  ].join("\n");
+  const input = {
+    params: {
+      name: "alice",
+      active: true,
+      displayName: "Alice",
+      sort: "",
+      asc: false,
+      limit: 10,
+      offset: 20
+    }
+  };
+  const program = compileBuilderScript(code);
+  assert.ok(program.ops && program.ops.length > 0);
+
+  const opsBuilder = new SqlBuilder(
+    registry,
+    "users.search",
+    "SELECT * FROM users SET /*#set*/ /*#where*/ /*#order*/ /*#page*/",
+    { orderable: { createdAt: "users.created_at" } }
+  );
+  const astBuilder = new SqlBuilder(
+    registry,
+    "users.search",
+    "SELECT * FROM users SET /*#set*/ /*#where*/ /*#order*/ /*#page*/",
+    { orderable: { createdAt: "users.created_at" } }
+  );
+
+  opsBuilder.runCompiledBuilderScript(program, input);
+  astBuilder.runCompiledBuilderScript({ ast: program.ast, ops: null }, input);
+
+  assert.deepStrictEqual(opsBuilder.build(), astBuilder.build());
+});
+
+test("compiled builder ops append large join fragments like AST execution", async () => {
+  const largeJoinFragment = [
+    "JOIN accounts a ON a.id = u.account_id AND a.tenant_id = :tenantId",
+    "JOIN account_plans ap ON ap.account_id = a.id",
+    "LEFT JOIN user_profiles up ON up.user_id = u.id",
+    "LEFT JOIN user_roles ur ON ur.user_id = u.id AND ur.active = :roleActive",
+    "LEFT JOIN permissions p ON p.role_id = ur.role_id",
+    "LEFT JOIN audit_events ae ON ae.user_id = u.id AND ae.kind = :auditKind"
+  ].join("\n");
+  const registry = {
+    getSql(name) {
+      if (name === "fragments.userGraph") return largeJoinFragment;
+      throw new Error(`unexpected query: ${name}`);
+    }
+  };
+  const code = [
+    "if (params.includeGraph) {",
+    "  appendQuery('join', 'fragments.userGraph', {",
+    "    tenantId: params.tenantId,",
+    "    roleActive: params.roleActive,",
+    "    auditKind: params.auditKind",
+    "  });",
+    "}",
+    "append('where', 'AND u.status = :status', { status: params.status });",
+    "orderBy('order', params.sort || 'createdAt', true);",
+    "limit('page', params.limit);"
+  ].join("\n");
+  const input = {
+    params: {
+      includeGraph: true,
+      tenantId: 7,
+      roleActive: true,
+      auditKind: "login",
+      status: "active",
+      sort: "",
+      limit: 25
+    }
+  };
+  const baseSql = [
+    "SELECT u.id, u.name",
+    "FROM users u",
+    "/*#join*/",
+    "WHERE u.deleted_at IS NULL",
+    "/*#where*/",
+    "/*#order*/",
+    "/*#page*/"
+  ].join("\n");
+  const program = compileBuilderScript(code);
+  assert.ok(program.ops && program.ops.length > 0);
+
+  for (const [dialect, placeholders] of [
+    ["pg", ["$1", "$2", "$3", "$4", "$5"]],
+    ["sqlite", ["?", "?", "?", "?", "?"]],
+    ["mysql", ["?", "?", "?", "?", "?"]],
+    ["mariadb", ["?", "?", "?", "?", "?"]]
+  ]) {
+    const options = {
+      dialect,
+      orderable: {
+        createdAt: "u.created_at"
+      }
+    };
+    const opsBuilder = new SqlBuilder(registry, "users.withGraph", baseSql, options);
+    const astBuilder = new SqlBuilder(registry, "users.withGraph", baseSql, options);
+
+    opsBuilder.runCompiledBuilderScript(program, input);
+    astBuilder.runCompiledBuilderScript({ ast: program.ast, ops: null }, input);
+
+    const expected = {
+      sql: [
+        "SELECT u.id, u.name",
+        "FROM users u",
+        `JOIN accounts a ON a.id = u.account_id AND a.tenant_id = ${placeholders[0]}`,
+        "JOIN account_plans ap ON ap.account_id = a.id",
+        "LEFT JOIN user_profiles up ON up.user_id = u.id",
+        `LEFT JOIN user_roles ur ON ur.user_id = u.id AND ur.active = ${placeholders[1]}`,
+        "LEFT JOIN permissions p ON p.role_id = ur.role_id",
+        `LEFT JOIN audit_events ae ON ae.user_id = u.id AND ae.kind = ${placeholders[2]}`,
+        "WHERE u.deleted_at IS NULL",
+        `AND u.status = ${placeholders[3]}`,
+        "ORDER BY u.created_at ASC",
+        `LIMIT ${placeholders[4]}`
+      ].join("\n"),
+      values: [7, true, "login", "active", 25]
+    };
+
+    assert.deepStrictEqual(opsBuilder.build(), expected);
+    assert.deepStrictEqual(opsBuilder.build(), astBuilder.build());
+  }
+});
+
+test("builder op compilation falls back to AST for unsupported but valid scripts", async () => {
+  const program = compileBuilderScript(
+    [
+      "const active = params.active;",
+      "if (active) {",
+      "  append('where', 'AND active = :active', { active: params.active });",
+      "}"
+    ].join("\n")
+  );
+
+  assert.strictEqual(program.ops, null);
 });
 
 test("runBuilderScript supports appendIf helpers", async () => {

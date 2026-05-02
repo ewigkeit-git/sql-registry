@@ -178,7 +178,7 @@ SELECT * FROM users WHERE id = :id
 ```
 ````
 
-Supported dialect aliases include `sqlite`, `sqlite3`, `mysql`, `mysql2`, `pg`, `postgres`, and `postgresql`.
+Supported dialect aliases include `sqlite`, `sqlite3`, `mysql`, `mysql2`, `mariadb`, `pg`, `postgres`, and `postgresql`.
 
 ## Builder Slots
 

@@ -13,7 +13,7 @@ export function normalizeDialect(input?: string) {
   const v = String(input).toLowerCase();
 
   if (["sqlite", "sqlite3"].includes(v)) return DIALECT.SQLITE;
-  if (["mysql", "mysql2"].includes(v)) return DIALECT.MYSQL;
+  if (["mysql", "mysql2", "mariadb"].includes(v)) return DIALECT.MYSQL;
   if (["pg", "postgres", "postgresql"].includes(v)) return DIALECT.PG;
 
   throw new Error(`unsupported dialect: ${input}`);
