@@ -1,6 +1,6 @@
 const acorn = require("acorn");
 import { bindSql } from "./binder";
-import { extractNamedParams } from "./param-parser";
+import { extractNamedParams, hasSqlStatementSeparator } from "./param-parser";
 import { buildExplain as buildExplainStmt } from "./explain-builder";
 import { validateParamTypes } from "./param-types";
 import { transpileBuilderScript } from "./builder-script";
@@ -166,6 +166,12 @@ function validateAppendParams(sql: string, params: Record<string, unknown>, deta
       extra,
       allowed: sqlParamNames
     });
+  }
+}
+
+function validateSingleStatementSql(sql: string, description: string, details: Record<string, unknown>) {
+  if (hasSqlStatementSeparator(sql)) {
+    throw new SqlBuilderError(`${description} must be a single statement without semicolons`, details);
   }
 }
 
@@ -1242,6 +1248,26 @@ function shouldRunOp(op: BuilderOp, input: BuilderScriptInput) {
   return !("condition" in op) || !op.condition || Boolean(evaluateCompiledExpression(op.condition, input));
 }
 
+const ORDERABLE_IDENTIFIER = "[A-Za-z_][A-Za-z0-9_]*";
+const ORDERABLE_COLUMN_PATTERN = new RegExp(`^${ORDERABLE_IDENTIFIER}(\\.${ORDERABLE_IDENTIFIER})*$`);
+
+export function isSafeOrderableColumn(column: string) {
+  return ORDERABLE_COLUMN_PATTERN.test(column.trim());
+}
+
+function validateOrderableColumns(orderable: Record<string, string>, details: Record<string, unknown>) {
+  for (const [key, column] of Object.entries(orderable)) {
+    if (typeof column !== "string" || !isSafeOrderableColumn(column)) {
+      throw new SqlBuilderError(`invalid orderable column expression for ${key}: ${column}`, {
+        ...details,
+        columnKey: key,
+        column,
+        allowedSyntax: "identifier or dotted identifier"
+      });
+    }
+  }
+}
+
 export function compileBuilderScript(code: string): BuilderScriptProgram | null {
   if (!code || !code.trim()) return null;
   const runnableCode = transpileBuilderScript(code);
@@ -1282,6 +1308,9 @@ export class SqlBuilder {
     this.registry = registry;
     this.queryName = queryName;
     this.baseSql = baseSql;
+    validateSingleStatementSql(this.baseSql, "base SQL", {
+      queryName: this.queryName
+    });
     this.baseParamNames = options.baseParamNames || extractNamedParams(baseSql);
 
     this.params = {};
@@ -1291,6 +1320,9 @@ export class SqlBuilder {
     this.dialect = options.dialect || "sqlite";
     this.compiledSqlCacheSize = options.compiledSqlCacheSize;
     this.orderable = options.orderable || {};
+    validateOrderableColumns(this.orderable, {
+      queryName: this.queryName
+    });
     this.allowedSlots = options.allowedSlots instanceof Set
       ? new Set(options.allowedSlots)
       : new Set(options.allowedSlots || extractSlotNames(baseSql));
@@ -1351,6 +1383,10 @@ export class SqlBuilder {
 
   appendTo(slotName: string, sql: string, params: Record<string, unknown> = {}) {
     this.assertKnownSlot(slotName);
+    validateSingleStatementSql(sql, "append SQL", {
+      queryName: this.queryName,
+      slotName
+    });
     validateAppendParams(sql, params, {
       queryName: this.queryName,
       slotName

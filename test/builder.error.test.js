@@ -127,6 +127,7 @@ const scriptCases = [
   ["append-query-if-empty", "appendQueryIf('where', true, 'fragments.active', {})", /must not be empty/],
   ["append-query-if-dynamic-bind-object", "appendQueryIf('where', true, 'fragments.active', params.binds)", /appendQuery params must be an object literal/],
   ["template-sql", "append('where', `AND id = ${params.id}`, { id: 1 })", /append SQL must be a string literal/],
+  ["raw-where-push-template-sql", "where.push(`u.name = '${params.name}'`)", /unknown identifier|method calls/],
   ["append-missing", "append('where', 'AND id = :id')", /missing/],
   ["append-extra", "append('where', 'AND active = 1', { active: true })", /not used/],
   ["set-dynamic-sql", "set(params.sql, { name: 'A' })", /set SQL must be a string literal/],
@@ -243,5 +244,5 @@ test("SqlBuilder rejects more than 100 invalid builder and append patterns", asy
     );
   }
 
-  assert.strictEqual(count, 133);
+  assert.strictEqual(count, 134);
 });

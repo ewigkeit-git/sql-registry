@@ -1,10 +1,8 @@
 # sql-registry
 
-Repository: <https://github.com/ewigkeit-git/sql-registry>
-
 > **Status:** sql-registry is pre-1.0. The public API, Markdown format, adapter behavior, and builder helpers may still change in breaking ways. It is usable today, but pin the package version and review release notes before upgrading.
 
-Keep SQL as a readable, reviewable asset instead of scattering it through application code.
+Bring AI-written and handwritten SQL back into a form humans can review, name, type-check, and maintain.
 
 sql-registry is a lightweight TypeScript/JavaScript library for storing SQL in structured Markdown, binding named parameters safely, and adding a small amount of controlled dynamic SQL when a query needs filters, sorting, paging, or reusable fragments.
 
@@ -18,6 +16,8 @@ In many codebases, SQL slowly becomes hard to maintain:
 - `ORDER BY ${sort}` and similar patterns become injection risks.
 - Dialect-specific SQL is hidden inside application conditionals.
 - SQL review is mixed with unrelated application logic.
+- AI-assisted SQL lands as one-off strings without names, parameter metadata, or a clear review surface.
+- ORM raw-query calls become the place where complex SQL, bind parameters, and dynamic fragments quietly pile up.
 
 sql-registry keeps query text, parameter metadata, dialect variants, and limited builder logic in Markdown files that can be reviewed like any other source file.
 
@@ -29,7 +29,16 @@ Application input is not allowed to become SQL syntax directly. Runtime values e
 
 The library is responsible for named-parameter binding, parameter metadata validation, dialect-specific SQL selection, and limited SQL fragment insertion. Final SQL syntax, constraints, locks, timeouts, permission errors, and execution behavior remain the responsibility of the database and driver.
 
-It is not meant to replace an ORM. Use Prisma, Sequelize, TypeORM, Drizzle, or your usual query layer for routine CRUD and simple relation loading. Use sql-registry for complex reports, tuned handwritten SQL, dialect-specific queries, and SQL that benefits from being reviewed as its own artifact.
+It is not meant to replace an ORM. Use Prisma, Sequelize, TypeORM, Drizzle, or your usual query layer for routine CRUD and simple relation loading. Use sql-registry for complex reports, tuned handwritten SQL, dialect-specific queries, ORM raw-query replacements, and SQL that benefits from being reviewed as its own artifact.
+
+## What sql-registry Enforces
+
+- Named parameters are bound as driver values, not interpolated into SQL.
+- Each SQL ID, such as `users.search`, is a single-statement definition.
+- Runtime sorting uses allowlisted keys, not raw column strings from input.
+- `LIMIT` and `OFFSET` are validated as non-negative integers.
+- Builder SQL fragments must be static literals in the registry.
+- PostgreSQL casts, JSON operators, comments, strings, and dollar quotes are handled by the parameter parser.
 
 ## Install
 
@@ -217,6 +226,12 @@ Runtime input is limited to:
 - validated `LIMIT` and `OFFSET` values
 - SQL fragments written as static string literals in the registry
 
+Each SQL ID is treated as one statement. Semicolons outside SQL strings and comments are rejected in registry SQL and builder SQL literals. Semicolons inside SQL strings, SQL comments, and PostgreSQL dollar-quoted strings are ignored for this check.
+
+This boundary is intentionally about safe binding and controlled SQL assembly. sql-registry is not a SQL linter. It does not try to judge whether a query is fast, idiomatic, normalized, indexed correctly, logically correct, permission-safe, or style-compliant. Review those concerns with your database, driver, schema design, migrations, tests, EXPLAIN plans, and your team's SQL review process.
+
+LIKE patterns are ordinary bound values. sql-registry prevents SQL injection by keeping the value in `values`; it does not define your search semantics or block wildcard characters such as `%` and `_`.
+
 The builder script is intentionally restricted. It is not general JavaScript execution.
 
 Allowed:
@@ -349,6 +364,7 @@ sql-registry is not:
 - an ORM
 - a full query builder
 - a SQL parser
+- a SQL linter
 - a migration tool
 - a database security boundary by itself
 

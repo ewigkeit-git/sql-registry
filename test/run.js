@@ -65,6 +65,18 @@ test("bindSql replaces named params outside string literals", async () => {
   });
 });
 
+test("bindSql preserves aliases when literal text matches a named param", async () => {
+  const stmt = bindSql(
+    "SELECT ':id' AS literal, :id AS id",
+    { id: 1 }
+  );
+
+  assert.deepStrictEqual(stmt, {
+    sql: "SELECT ':id' AS literal, ? AS id",
+    values: [1]
+  });
+});
+
 test("LruCache evicts the least recently used item", async () => {
   const cache = new LruCache(2);
 
@@ -145,6 +157,104 @@ test("bindSql ignores params inside comments", async () => {
     sql: "select ? as id -- :ignored\nwhere id = ?",
     values: [7, 7]
   });
+});
+
+test("bindSql ignores named params inside commented out predicates", async () => {
+  const stmt = bindSql(
+    [
+      "SELECT *",
+      "FROM users",
+      "WHERE id = :id",
+      "-- AND name = :name"
+    ].join("\n"),
+    { id: 7 }
+  );
+
+  assert.deepStrictEqual(stmt, {
+    sql: [
+      "SELECT *",
+      "FROM users",
+      "WHERE id = ?",
+      "-- AND name = :name"
+    ].join("\n"),
+    values: [7]
+  });
+});
+
+test("bindSql handles postgres json text operator params", async () => {
+  const stmt = bindSql(
+    [
+      "SELECT data->>:key AS value",
+      "FROM logs",
+      "WHERE id = :id"
+    ].join("\n"),
+    { key: "message", id: 7 },
+    { dialect: "pg" }
+  );
+
+  assert.deepStrictEqual(stmt, {
+    sql: [
+      "SELECT data->>$1 AS value",
+      "FROM logs",
+      "WHERE id = $2"
+    ].join("\n"),
+    values: ["message", 7]
+  });
+});
+
+test("bindSql preserves postgres array casts after named params", async () => {
+  assert.deepStrictEqual(
+    bindSql("SELECT :ids::int[] AS ids", { ids: [1, 2, 3] }, { dialect: "pg" }),
+    {
+      sql: "SELECT $1::int[] AS ids",
+      values: [[1, 2, 3]]
+    }
+  );
+});
+
+test("bindSql ignores params inside postgres-cast string literals", async () => {
+  assert.deepStrictEqual(
+    bindSql("SELECT ':id'::text AS literal, :id AS id", { id: 7 }, { dialect: "pg" }),
+    {
+      sql: "SELECT ':id'::text AS literal, $1 AS id",
+      values: [7]
+    }
+  );
+});
+
+test("bindSql handles postgres json path operator params", async () => {
+  assert.deepStrictEqual(
+    bindSql(
+      [
+        "SELECT data #>> :path AS value",
+        "FROM logs",
+        "WHERE id = :id"
+      ].join("\n"),
+      { path: ["meta", "message"], id: 7 },
+      { dialect: "pg" }
+    ),
+    {
+      sql: [
+        "SELECT data #>> $1 AS value",
+        "FROM logs",
+        "WHERE id = $2"
+      ].join("\n"),
+      values: [["meta", "message"], 7]
+    }
+  );
+});
+
+test("bindSql accepts raw LIKE values as bound values", async () => {
+  assert.deepStrictEqual(
+    bindSql(
+      "SELECT * FROM users WHERE name LIKE :name",
+      { name: "%' OR 1=1 --" }
+    ),
+    {
+      sql: "SELECT * FROM users WHERE name LIKE ?",
+      values: ["%' OR 1=1 --"]
+    }
+  );
 });
 
 test("CLI validate accepts markdown registry directories", async () => {
@@ -1380,6 +1490,39 @@ test("SqlBuilder rejects appends to undefined slots immediately", async () => {
   );
 });
 
+test("SqlBuilder rejects base and appended SQL with statement separators", async () => {
+  assert.throws(
+    () => new SqlBuilder(null, "users.search", "SELECT * FROM users; DROP TABLE users"),
+    /base SQL must be a single statement without semicolons/
+  );
+
+  const builder = new SqlBuilder(
+    null,
+    "users.search",
+    "SELECT * FROM users /*#where*/"
+  );
+
+  assert.throws(
+    () => builder.append("where", "AND active = 1; DROP TABLE users"),
+    /append SQL must be a single statement without semicolons/
+  );
+});
+
+test("SqlBuilder allows semicolons inside SQL literals and comments", async () => {
+  const builder = new SqlBuilder(
+    null,
+    "users.search",
+    "SELECT ';' AS literal /* ; ignored */ /*#where*/"
+  );
+
+  builder.append("where", "AND note = ';' -- ; ignored");
+
+  assert.deepStrictEqual(builder.build(), {
+    sql: "SELECT ';' AS literal /* ; ignored */ WHERE note = ';' -- ; ignored",
+    values: []
+  });
+});
+
 test("SqlBuilder validates and coerces limit and offset", async () => {
   const builder = new SqlBuilder(
     null,
@@ -1405,6 +1548,56 @@ test("SqlBuilder validates and coerces limit and offset", async () => {
 
   assert.throws(
     () => builder.offset("paging", "1.5"),
+    /offset must be a non-negative integer/
+  );
+});
+
+test("SqlBuilder rejects SQL injection-shaped limit and offset values", async () => {
+  const builder = new SqlBuilder(
+    null,
+    "users.search",
+    "SELECT * FROM users /*#page*/"
+  );
+
+  assert.throws(
+    () => builder.runBuilderScript(
+      [
+        "limit('page', params.limit);",
+        "offset('page', params.offset);"
+      ].join("\n"),
+      {
+        params: {
+          limit: "10; DROP TABLE users; --",
+          offset: "0"
+        }
+      }
+    ),
+    /limit must be a non-negative integer/
+  );
+
+  assert.strictEqual(builder.toSql(), "SELECT * FROM users");
+});
+
+test("SqlBuilder rejects SQL injection-shaped offset values", async () => {
+  const builder = new SqlBuilder(
+    null,
+    "users.search",
+    "SELECT * FROM users /*#page*/"
+  );
+
+  assert.throws(
+    () => builder.runBuilderScript(
+      [
+        "limit('page', params.limit);",
+        "offset('page', params.offset);"
+      ].join("\n"),
+      {
+        params: {
+          limit: "10",
+          offset: "0; DROP TABLE users; --"
+        }
+      }
+    ),
     /offset must be a non-negative integer/
   );
 });
@@ -1594,6 +1787,81 @@ test("SqlRegistry.builder creates a builder for the named query", async () => {
     sql: "SELECT * FROM users WHERE active = ? ORDER BY users.created_at DESC",
     values: [true]
   });
+});
+
+test("SqlBuilder orderBy rejects SQL injection-shaped sort keys", async () => {
+  const builder = new SqlBuilder(
+    null,
+    "users.search",
+    "SELECT * FROM users /*#order*/",
+    {
+      orderable: {
+        name: "users.name",
+        createdAt: "users.created_at"
+      }
+    }
+  );
+
+  assert.throws(
+    () => builder.orderBy("order", "name; DROP TABLE users; --", true),
+    error => {
+      assert.ok(error instanceof SqlBuilderError);
+      assert.match(error.message, /invalid order column/);
+      assert.deepStrictEqual(error.details.allowed, ["name", "createdAt"]);
+      return true;
+    }
+  );
+
+  assert.strictEqual(builder.toSql(), "SELECT * FROM users");
+});
+
+test("SqlBuilder orderBy does not interpolate SQL injection-shaped direction values", async () => {
+  const builder = new SqlBuilder(
+    null,
+    "users.search",
+    "SELECT * FROM users /*#order*/",
+    {
+      orderable: {
+        name: "users.name"
+      }
+    }
+  );
+
+  builder.runBuilderScript(
+    "orderBy('order', params.sort, params.direction);",
+    {
+      params: {
+        sort: "name",
+        direction: "asc; DROP TABLE users; --"
+      }
+    }
+  );
+
+  assert.deepStrictEqual(builder.build(), {
+    sql: "SELECT * FROM users ORDER BY users.name ASC",
+    values: []
+  });
+});
+
+test("SqlBuilder rejects SQL injection-shaped orderable column expressions", async () => {
+  assert.throws(
+    () => new SqlBuilder(
+      null,
+      "users.search",
+      "SELECT * FROM users /*#order*/",
+      {
+        orderable: {
+          name: "u.name; DROP TABLE users; --"
+        }
+      }
+    ),
+    error => {
+      assert.ok(error instanceof SqlBuilderError);
+      assert.match(error.message, /invalid orderable column expression/);
+      assert.strictEqual(error.details.columnKey, "name");
+      return true;
+    }
+  );
 });
 
 test("SqlBuilder.buildExplain explains the built SQL", async () => {
@@ -1895,7 +2163,7 @@ test("SqlRegistry loads markdown list-style metadata", async () => {
       "  :file_name,",
       "  :relative_path,",
       "  :year",
-      ");",
+      ")",
       "```",
       ""
     ].join("\n"),

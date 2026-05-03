@@ -114,6 +114,84 @@ test("SqlRegistry rejects invalid query ids", async () => {
   );
 });
 
+test("SqlRegistry rejects SQL injection-shaped orderable column expressions", async () => {
+  const fixturePath = path.join(__dirname, ".tmp", "registry-invalid-orderable-column.md");
+  writeFixture(fixturePath, [
+    "## users.search",
+    "",
+    "orderable:",
+    "  name: u.name; DROP TABLE users; --",
+    "",
+    "```sql",
+    "SELECT * FROM users /*#order*/",
+    "```",
+    "",
+    "```js builder",
+    "orderBy('order', params.sort || 'name', true);",
+    "```",
+    ""
+  ]);
+
+  const registry = new SqlRegistry();
+
+  assert.throws(
+    () => registry.loadFile(fixturePath),
+    error => {
+      assert.match(error.errors.join("\n"), /registry-invalid-orderable-column\.md:4: \[users\.search\] invalid orderable column expression for name: u\.name; DROP TABLE users; --/);
+      return true;
+    }
+  );
+});
+
+test("SqlRegistry rejects SQL blocks with statement separators", async () => {
+  const fixturePath = path.join(__dirname, ".tmp", "registry-multiple-statements.md");
+  writeFixture(fixturePath, [
+    "## users.find",
+    "",
+    "```sql",
+    "SELECT * FROM users;",
+    "DROP TABLE users",
+    "```",
+    ""
+  ]);
+
+  const registry = new SqlRegistry();
+
+  assert.throws(
+    () => registry.loadFile(fixturePath),
+    error => {
+      assert.match(error.errors.join("\n"), /registry-multiple-statements\.md:3: \[users\.find\]\[default\] SQL block must be a single statement without semicolons/);
+      return true;
+    }
+  );
+});
+
+test("SqlRegistry rejects builder SQL literals with statement separators", async () => {
+  const fixturePath = path.join(__dirname, ".tmp", "registry-builder-multiple-statements.md");
+  writeFixture(fixturePath, [
+    "## users.search",
+    "",
+    "```sql",
+    "SELECT * FROM users /*#where*/",
+    "```",
+    "",
+    "```js builder",
+    "append('where', 'AND active = 1; DROP TABLE users');",
+    "```",
+    ""
+  ]);
+
+  const registry = new SqlRegistry();
+
+  assert.throws(
+    () => registry.loadFile(fixturePath),
+    error => {
+      assert.match(error.errors.join("\n"), /builder SQL literal must be a single statement without semicolons/);
+      return true;
+    }
+  );
+});
+
 test("SqlRegistry validation errors include file line query and dialect context", async () => {
   const fixturePath = path.join(__dirname, ".tmp", "registry-error-context.md");
   writeFixture(fixturePath, [

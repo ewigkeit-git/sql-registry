@@ -1,10 +1,17 @@
 const fs = require("fs");
 const path = require("path");
 const acorn = require("acorn");
-import { extractNamedParams } from "./param-parser";
+import { extractNamedParams, hasSqlStatementSeparator } from "./param-parser";
 import { normalizeDialect } from "./dialect";
 import { bindSql } from "./binder";
-import { BuilderScriptProgram, compileBuilderScript, extractSlotNames, SqlBuilder, SqlBuilderError } from "./builder";
+import {
+  BuilderScriptProgram,
+  compileBuilderScript,
+  extractSlotNames,
+  isSafeOrderableColumn,
+  SqlBuilder,
+  SqlBuilderError
+} from "./builder";
 import { transpileBuilderScript } from "./builder-script";
 import {
   buildParamTypeMap,
@@ -327,6 +334,9 @@ function validateEntry(name: string, entry: QueryEntry, source?: QuerySourceInfo
       errors.push(`${sqlPrefix}[${name}][${dialect}] SQL block is empty`);
       continue;
     }
+    if (hasSqlStatementSeparator(sql)) {
+      errors.push(`${sqlPrefix}[${name}][${dialect}] SQL block must be a single statement without semicolons`);
+    }
 
     const sqlParams: string[] = extractNamedParams(sql);
     const metaOnly = declaredParamNames.filter(
@@ -382,6 +392,7 @@ function extractBuilderScriptMeta(code: string) {
   const boundParams = new Set<string>();
   const internalParams = new Set<string>();
   const queryRefs = new Set<string>();
+  const errors: string[] = [];
 
   if (!code || !code.trim()) {
     return {
@@ -389,7 +400,7 @@ function extractBuilderScriptMeta(code: string) {
       boundParams: [],
       internalParams: [],
       queryRefs: [],
-      errors: []
+      errors
     };
   }
 
@@ -467,6 +478,14 @@ function extractBuilderScriptMeta(code: string) {
           queryRefs.add(String(queryNameArg.value));
         }
       }
+
+      const sqlArgIndex = getSqlLiteralArgIndex(astNode);
+      if (sqlArgIndex >= 0) {
+        const sqlArg = astArray(astNode.arguments)[sqlArgIndex];
+        if (sqlArg?.type === "Literal" && typeof sqlArg.value === "string" && hasSqlStatementSeparator(String(sqlArg.value))) {
+          errors.push(`structure error: builder SQL literal must be a single statement without semicolons`);
+        }
+      }
     }
 
     for (const value of Object.values(node)) {
@@ -483,7 +502,7 @@ function extractBuilderScriptMeta(code: string) {
     boundParams: [...boundParams],
     internalParams: [...internalParams],
     queryRefs: [...queryRefs],
-    errors: []
+    errors: [...new Set(errors)]
   };
 }
 
@@ -496,6 +515,18 @@ function getCalleeName(callee: unknown) {
     return String(property.name);
   }
   return null;
+}
+
+function getSqlLiteralArgIndex(callNode: AstNode) {
+  const calleeName = getCalleeName(callNode.callee);
+  const callee = asAstNode(callNode.callee);
+  const memberCall = callee?.type === "MemberExpression";
+
+  if (calleeName === "append") return memberCall ? 0 : 1;
+  if (calleeName === "appendIf") return memberCall ? 1 : 2;
+  if (calleeName === "set") return 0;
+  if (calleeName === "setIf") return 1;
+  return -1;
 }
 
 export function parseImportDirective(line: string): ImportDirective | ImportDirectiveError | null {
@@ -790,7 +821,15 @@ export function parseMarkdownFile(filePath: string): ParseMarkdownResult {
           if (!orderableMatch) break;
 
           foundEntry = true;
-          orderable[orderableMatch[1]] = orderableMatch[2].trim();
+          {
+            const key = orderableMatch[1];
+            const column = orderableMatch[2].trim();
+            if (!isSafeOrderableColumn(column)) {
+              errors.push(`${location(filePath, i + 2)}: [${currentName}] invalid orderable column expression for ${key}: ${column}`);
+            } else {
+              orderable[key] = column;
+            }
+          }
           i++;
         }
 

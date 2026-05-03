@@ -1,23 +1,25 @@
 # sql-registry
 
-Repository: <https://github.com/ewigkeit-git/sql-registry>
-
 > **ステータス:** sql-registry は pre-1.0 です。公開 API、Markdown 形式、アダプターの挙動、ビルダーのヘルパーは今後破壊的に変更される可能性があります。現段階でも利用できますが、導入時はバージョンを固定し、更新時はリリース内容を確認してください。
+
+AI が書いた SQL も、人間が名前を付け、型を見て、レビューし、保守できる形に戻します。
 
 SQL をアプリケーションコードのあちこちに散らさず、読みやすくレビューしやすい Markdown の資産として管理するための軽量ライブラリです。
 
-sql-registry は、構造化された Markdown に SQL、パラメータ定義、型、説明、データベースごとの方言差分、最小限の動的 SQL をまとめます。
+sql-registry は、Markdown に SQL、パラメータ定義、型、説明、データベースごとの方言差分、最小限の動的 SQL をまとめます。
 
 ## 利用する理由
 
 実際のアプリケーションでは、SQL が次のような状態になりがちです。
 
-- SQL 文字列がサービスやリポジトリ層に散らばる。
-- パラメータの意味や型が SQL から離れてしまう。
-- 動的 SQL が文字列連結で増えていく。
-- `ORDER BY ${sort}` のような危険な実装が入りやすい。
-- SQLite / PostgreSQL / MySQL の違いがアプリケーション側の分岐に埋もれる。
-- SQL レビューがアプリケーションロジックのレビューと混ざる。
+- SQL 文字列がサービスやリポジトリ層に散らばります。
+- パラメータの意味や型が SQL から離れてしまいます。
+- 動的 SQL が文字列連結で増えていきます。
+- `ORDER BY ${sort}` のような危険な実装が入りやすくなります。
+- SQLite / PostgreSQL / MySQL の違いがアプリケーション側の分岐に埋もれます。
+- SQL レビューがアプリケーションロジックのレビューと混ざります。
+- AI 支援で書かれた SQL が、名前やパラメータ定義やレビュー面を持たない一回限りの文字列になりやすくなります。
+- ORM の raw query 呼び出しに、複雑な SQL、bind、動的な断片が少しずつ積み上がります。
 
 sql-registry は、SQL を Markdown レジストリにまとめ、クエリ本文、メタデータ、限定的なビルダー処理を同じ場所で扱えるようにします。
 
@@ -29,7 +31,16 @@ sql-registry は、SQL を生成コードではなく、レビュー可能な静
 
 このライブラリが担当するのは、named parameter の bind、パラメータ定義の検証、方言別 SQL の選択、限定された SQL 断片の追加です。SQL 構文の最終的な正しさ、制約違反、ロック、タイムアウト、権限エラーなどはデータベースとドライバーの責務として扱います。
 
-ORM を置き換えるものではありません。通常の CRUD や単純な関連取得は Prisma、Sequelize、TypeORM、Drizzle などに任せ、複雑な集計、レポート、性能調整された手書き SQL、方言ごとに最適化した SQL を sql-registry で管理する、という使い分けを想定しています。
+ORM を置き換えるものではありません。通常の CRUD や単純な関連取得は Prisma、Sequelize、TypeORM、Drizzle などに任せ、複雑な集計、レポート、性能調整された手書き SQL、方言ごとに最適化した SQL、ORM の raw query で実行している SQL を sql-registry で管理する、という使い分けを想定しています。
+
+## sql-registry が保証すること
+
+- named parameter は SQL に埋め込まず、driver の値として bind します。
+- `users.search` のような SQL ID は、1つの statement として扱います。
+- 並び替えはユーザー入力のカラム文字列ではなく、許可リスト済み key から解決します。
+- `LIMIT` / `OFFSET` は非負整数として検証します。
+- builder の SQL 断片は、レジストリ内の静的 literal に限定します。
+- PostgreSQL の cast、JSON operator、コメント、文字列、dollar quote を考慮して parameter を抽出します。
 
 ## インストール
 
@@ -204,6 +215,12 @@ sql-registry は、ユーザー入力を SQL 構文に直接連結しない設�
 - 検証された `LIMIT` / `OFFSET`
 - レジストリに静的文字列として書かれた SQL 断片
 
+1つの SQL ID は1つの statement として扱われます。SQL 文字列や SQL コメントの外にあるセミコロンは、レジストリ SQL と builder SQL literal の両方で拒否されます。SQL 文字列、SQL コメント、PostgreSQL の dollar quote の中にあるセミコロンは、この判定では無視されます。
+
+この境界は、安全な bind と制御された SQL 組み立てのためのものです。sql-registry は SQL lint ではありません。クエリが高速か、慣用的か、正規化されているか、index に合っているか、論理的に正しいか、権限設計として安全か、チームのスタイルに沿っているかは判定しません。それらはデータベース、ドライバー、スキーマ設計、migration、テスト、EXPLAIN、チームの SQL レビューで扱う責務です。
+
+LIKE pattern は通常のバインド値です。sql-registry は値を `values` に留めることで SQL injection を防ぎますが、検索仕様を定義したり、`%` や `_` のような wildcard 文字を禁止したりはしません。
+
 builder script は、汎用的な JavaScript 実行環境ではありません。
 
 許可されるもの:
@@ -323,6 +340,7 @@ sql-registry は、次の役割を担うためのものではありません。
 - ORM
 - 汎用クエリビルダー
 - SQL パーサー
+- SQL lint
 - マイグレーションツール
 - それ単体でデータベースアクセスを保護する境界
 

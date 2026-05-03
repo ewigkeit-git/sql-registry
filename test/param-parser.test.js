@@ -2,6 +2,7 @@ const assert = require("assert");
 const { test } = require("./harness");
 const {
   stripQuotedAndCommented,
+  hasSqlStatementSeparator,
   extractNamedParamTokens,
   extractNamedParams
 } = require("../dist/lib/param-parser");
@@ -284,6 +285,13 @@ test("stripQuotedAndCommented masks quoted and commented bytes with spaces", () 
   assert.strictEqual(stripped.includes(":ignored"), false);
   assert.strictEqual(stripped.includes("':id'"), false);
   assert.strictEqual(normalizeMask(stripped).length, normalizeMask(sql).length);
+});
+
+test("hasSqlStatementSeparator ignores semicolons inside quotes and comments", () => {
+  assert.strictEqual(hasSqlStatementSeparator("SELECT 1; SELECT 2"), true);
+  assert.strictEqual(hasSqlStatementSeparator("SELECT ';' AS literal"), false);
+  assert.strictEqual(hasSqlStatementSeparator("SELECT 1 -- ; ignored"), false);
+  assert.strictEqual(hasSqlStatementSeparator("SELECT 1 /* ; ignored */"), false);
 });
 
 test("bindSql uses the same param-parser token stream", () => {

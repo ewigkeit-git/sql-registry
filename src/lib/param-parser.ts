@@ -118,6 +118,10 @@ export function stripQuotedAndCommented(sql: string) {
   return out;
 }
 
+export function hasSqlStatementSeparator(sql: string) {
+  return stripQuotedAndCommented(sql).includes(";");
+}
+
 export function extractNamedParamTokens(sql: string): NamedParamToken[] {
   const cleaned = stripQuotedAndCommented(sql);
   const regex = /(^|[^:]):(?:\.\.\.)?([A-Za-z_][A-Za-z0-9_]*)/g;
