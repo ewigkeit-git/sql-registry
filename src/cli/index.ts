@@ -2,7 +2,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import { generateDocs } from "../gendoc/generate";
+import { DocsTheme, generateDocs } from "../gendoc/generate";
 import { collectMarkdownDependencyFiles, SqlRegistry, SqlRegistryValidationError } from "../lib/sql-registry";
 
 type ValidateOptions = {
@@ -11,6 +11,7 @@ type ValidateOptions = {
   lang?: string;
   out?: string;
   strict: boolean;
+  theme?: DocsTheme;
 };
 
 type ValidateResult = {
@@ -32,6 +33,7 @@ function usage() {
     "  --lang <code>     Generate docs UI labels in a supported language",
     "  --no-strict       Keep loading after validation errors when possible",
     "  --out <file>      Write generated HTML docs to a file",
+    "  --theme <mode>    Set docs theme: auto, light, or dark",
     "  -h, --help        Show help",
     "  -v, --version     Show version"
   ].join("\n");
@@ -46,6 +48,14 @@ function getVersion() {
   } catch {
     return "0.0.0";
   }
+}
+
+function parseDocsTheme(value: string): DocsTheme {
+  if (value === "auto" || value === "light" || value === "dark") {
+    return value;
+  }
+
+  throw new Error(`unsupported docs theme: ${value}`);
 }
 
 function isMarkdownFile(filePath: string) {
@@ -196,6 +206,20 @@ function parseArgs(argv: string[]) {
       continue;
     }
 
+    if (arg === "--theme") {
+      const theme = argv[++i];
+      if (!theme) {
+        throw new Error("--theme requires a value");
+      }
+      options.theme = parseDocsTheme(theme);
+      continue;
+    }
+
+    if (arg.startsWith("--theme=")) {
+      options.theme = parseDocsTheme(arg.slice("--theme=".length));
+      continue;
+    }
+
     if (arg === "--dialect") {
       const dialect = argv[++i];
       if (!dialect) {
@@ -255,7 +279,8 @@ export function run(argv = process.argv.slice(2), stdout = process.stdout, stder
       dialect: parsed.options.dialect,
       lang: parsed.options.lang,
       outFile: parsed.options.out,
-      strict: parsed.options.strict
+      strict: parsed.options.strict,
+      theme: parsed.options.theme
     });
 
     if (parsed.options.json) {

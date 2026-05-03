@@ -360,10 +360,25 @@ test("CLI doc generates an HTML registry document from the example registry", as
     const stderr = { write: text => { output.stderr += text; } };
     const status = cli.run(["doc", "--lang", "ja", "--out", outFile, exampleDir], stdout, stderr);
     const html = fs.readFileSync(outFile, "utf8");
+    const css = fs.readFileSync(path.join(fixtureDir, "style.css"), "utf8");
+    const js = fs.readFileSync(path.join(fixtureDir, "app.js"), "utf8");
 
     assert.strictEqual(status, 0, output.stderr);
     assert.match(output.stdout, /ok - wrote/);
     assert.match(output.stdout, /5 file\(s\), 4 query\(ies\)/);
+    assert.match(html, /<title>capture-review-demo v1\.4\.0 SQL設計書<\/title>/);
+    assert.match(html, /<h1>capture-review-demo v1\.4\.0 SQL設計書<\/h1>/);
+    assert.match(html, /<th>参照SQL ID<\/th>/);
+    assert.doesNotMatch(html, /<th>appendQuery<\/th>/);
+    assert.match(html, /<h4>Builder定義<\/h4>/);
+    assert.match(html, /<h4>SQL定義<\/h4>/);
+    assert.match(html, /<div class="block-title">動的SQL生成<\/div><div class="dynamic-sql" data-dynamic-sql="captures\.search"><\/div>/);
+    assert.match(html, /<div class="block-title">動的SQL生成<\/div><div class="dynamic-sql" data-dynamic-sql="captures\.search"><\/div>\s*<div class="block-title">EXPLAIN<\/div>/);
+    assert.match(html, /<script type="application\/json" id="dynamic-sql-data">/);
+    assert.match(html, /data-dynamic-explain-output="captures\.search"/);
+    assert.match(html, /"explainPrefix":"EXPLAIN"/);
+    assert.match(html, /"label":"params\.labelName"/);
+    assert.match(html, /"queryName":"fragments\.captureHasLabel"/);
     assert.match(html, /SQL ID/);
     assert.match(html, /概要/);
     assert.match(html, /パラメータ/);
@@ -374,9 +389,65 @@ test("CLI doc generates an HTML registry document from the example registry", as
     assert.match(html, /captures\.dailySummary/);
     assert.match(html, /fragments\.captureHasLabel/);
     assert.match(html, /href="#q-fragments-captureHasLabel"/);
+    assert.match(html, /appendQuery\(&#39;where&#39;, &#39;<a href="#q-fragments-captureHasLabel" data-query-link="fragments\.captureHasLabel">fragments\.captureHasLabel<\/a>&#39;/);
+    assert.doesNotMatch(html, /<h4>appendQuery/);
+    assert.match(html, /<h4>参照元<\/h4>\s*<table class="mini-table"><thead><tr><th>SQL ID<\/th><th>説明<\/th><\/tr><\/thead><tbody><tr><td><a href="#q-captures-search" data-query-link="captures\.search"><code>captures\.search<\/code><\/a><\/td><td>Capture review list<br>Searches capture rows for the review screen with optional status, label, and time filters\.<br># Capture update queries<\/td><\/tr><\/tbody><\/table>/);
     assert.match(html, /Capture review list/);
     assert.match(html, /EXPLAIN/);
-    assert.match(html, /<script>\(function\(\)\{var _0=/);
+    assert.match(html, /<html lang="ja" data-theme="auto">/);
+    assert.match(html, /<link rel="stylesheet" href="\.\/style\.css">/);
+    assert.match(html, /class="theme-toggle"/);
+    assert.match(html, /data-theme-toggle="dark"/);
+    assert.match(html, /<script src="\.\/app\.js"><\/script>/);
+    assert.doesNotMatch(html, /<style>/);
+    assert.doesNotMatch(html, /<script>\(function/);
+    assert.match(css, /prefers-color-scheme: dark/);
+    assert.match(css, /:root\[data-theme="dark"\]/);
+    assert.match(css, /\.dynamic-toggle/);
+    assert.match(css, /\.dynamic-subtitle/);
+    assert.match(css, /\.dynamic-line-added/);
+    assert.match(css, /--branch-color/);
+    assert.match(js, /sql-registry-docs-theme/);
+    assert.match(js, /data-dynamic-output/);
+    assert.match(js, /data-dynamic-explain-output/);
+    assert.doesNotMatch(js, /<div class="dynamic-subtitle">EXPLAIN/);
+    assert.match(js, /data-dynamic-all/);
+    assert.match(js, /dynamic-line-added/);
+    assert.match(js, /--branch-color:/);
+    assert.match(js, /^\(function\(\)\{var _0=/);
+  } finally {
+    removeFixtureDir(fixtureDir);
+  }
+});
+
+test("CLI doc can generate docs with an explicit dark theme", async () => {
+  const fixtureDir = path.join(__dirname, ".tmp-cli", "doc-dark");
+  const outFile = path.join(fixtureDir, "docs.html");
+  removeFixtureDir(fixtureDir);
+
+  try {
+    writeFixture(path.join(fixtureDir, "queries.md"), `
+## users.find
+param: id:integer - User id
+
+\`\`\`sql
+SELECT * FROM users WHERE id = :id
+\`\`\`
+`);
+
+    const output = { stdout: "", stderr: "" };
+    const stdout = { write: text => { output.stdout += text; } };
+    const stderr = { write: text => { output.stderr += text; } };
+    const status = cli.run(["doc", "--theme", "dark", "--out", outFile, fixtureDir], stdout, stderr);
+    const html = fs.readFileSync(outFile, "utf8");
+    const css = fs.readFileSync(path.join(fixtureDir, "style.css"), "utf8");
+
+    assert.strictEqual(status, 0, output.stderr);
+    assert.match(html, /<html lang="en" data-theme="dark">/);
+    assert.match(html, /<link rel="stylesheet" href="\.\/style\.css">/);
+    assert.match(css, /:root\[data-theme="dark"\]/);
+    assert.match(css, /--bg:#0f141b/);
+    assert.match(html, /<button type="button" data-theme-toggle="dark" aria-pressed="false">Dark<\/button>/);
   } finally {
     removeFixtureDir(fixtureDir);
   }

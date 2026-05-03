@@ -262,11 +262,13 @@ npx sql-registry validate --dialect pg ./sql
 npx sql-registry validate --json ./sql
 npx sql-registry doc --out sql-registry-docs.html ./sql
 npx sql-registry doc --lang ja --out sql-registry-docs.html ./sql
+npx sql-registry doc --theme dark --out sql-registry-docs.html ./sql
 ```
 
 The validator reports structure errors such as duplicate query names, missing SQL blocks, undeclared parameters, invalid builder scripts, and unknown `appendQuery()` references.
 
-The `doc` command writes a static HTML registry document with a SQL ID index, file list, query definitions, SQL blocks, params, builder scripts, `appendQuery()` links, and EXPLAIN snippets.
+The `doc` command writes a static HTML registry document with a SQL ID index, file list, query definitions, SQL blocks, params, builder scripts, `appendQuery()` links, and EXPLAIN snippets. It also writes `style.css` and `app.js` next to the output HTML.
+Generated docs follow the viewer's system dark theme by default and include an in-page theme selector. Use `--theme auto`, `--theme light`, or `--theme dark` to set the initial rendered theme.
 Supported doc UI languages are `en`, `ja`, `ko`, `zh-CN`, `zh-TW`, `es`, `fr`, `de`, and `ru`.
 
 ## Imports

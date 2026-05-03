@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="ja" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>capture-review-demo v1.4.0 SQL設計書</title>
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+<div class="theme-toggle" aria-label="Theme">
+  <button type="button" data-theme-toggle="auto" aria-pressed="false">Auto</button>
+  <button type="button" data-theme-toggle="light" aria-pressed="false">Light</button>
+  <button type="button" data-theme-toggle="dark" aria-pressed="false">Dark</button>
+</div>
+<div class="layout">
+<aside>
+  <div class="menu-title">ホーム</div>
+  <ul class="menu-list">
+    <li><a href="#overview" data-overview-link>概要</a></li>
+  </ul>
+  <div class="menu-title">SQL ID</div>
+  <ul class="menu-list">
+    <li><a href="#q-captures-dailySummary" data-query-link="captures.dailySummary">captures.dailySummary</a></li><li><a href="#q-captures-search" data-query-link="captures.search">captures.search</a></li><li><a href="#q-captures-updateReview" data-query-link="captures.updateReview">captures.updateReview</a></li><li><a href="#q-fragments-captureHasLabel" data-query-link="fragments.captureHasLabel">fragments.captureHasLabel</a></li>
+  </ul>
+  <div class="menu-title">ファイル</div>
+  <ul class="menu-list">
+    <li><a href="#f-C--fw-sql-registry-examples-doc-demo-captures-search-md" data-file-link>examples\doc-demo\captures\search.md</a></li><li><a href="#f-C--fw-sql-registry-examples-doc-demo-captures-summary-md" data-file-link>examples\doc-demo\captures\summary.md</a></li><li><a href="#f-C--fw-sql-registry-examples-doc-demo-captures-update-md" data-file-link>examples\doc-demo\captures\update.md</a></li><li><a href="#f-C--fw-sql-registry-examples-doc-demo-fragments-capture-md" data-file-link>examples\doc-demo\fragments\capture.md</a></li><li><a href="#f-C--fw-sql-registry-examples-doc-demo-registry-md" data-file-link>examples\doc-demo\registry.md</a></li>
+  </ul>
+</aside>
+<main>
+  <section id="overview" class="view">
+    <h1>capture-review-demo v1.4.0 SQL設計書</h1>
+    <p class="subtitle">4 query definitions in 5 file(s)</p>
+    
+
+    <h2>概要</h2>
+    <table class="summary-table">
+      <thead><tr><th>SQL ID</th><th>ファイル</th><th>型</th><th>パラメータ</th><th>参照SQL ID</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><a href="#q-captures-dailySummary" data-query-link="captures.dailySummary"><code>captures.dailySummary</code></a></td>
+          <td class="file-path"><a href="#f-C--fw-sql-registry-examples-doc-demo-registry-md" data-file-link>examples\doc-demo\registry.md:111</a></td>
+          <td><span class="badge ">静的</span></td>
+          <td><code>workspaceId</code>, <code>capturedFrom</code>, <code>capturedTo</code></td>
+          <td><span class="muted">なし</span></td>
+        </tr><tr>
+          <td><a href="#q-captures-search" data-query-link="captures.search"><code>captures.search</code></a></td>
+          <td class="file-path"><a href="#f-C--fw-sql-registry-examples-doc-demo-registry-md" data-file-link>examples\doc-demo\registry.md:6</a></td>
+          <td><span class="badge dynamic">動的</span></td>
+          <td><code>workspaceId</code>, <code>reviewState</code>, <code>labelName</code>, <code>capturedFrom</code>, <code>capturedTo</code>, <code>limitNum</code>, <code>offsetNum</code></td>
+          <td><a href="#q-fragments-captureHasLabel" data-query-link="fragments.captureHasLabel">fragments.captureHasLabel</a></td>
+        </tr><tr>
+          <td><a href="#q-captures-updateReview" data-query-link="captures.updateReview"><code>captures.updateReview</code></a></td>
+          <td class="file-path"><a href="#f-C--fw-sql-registry-examples-doc-demo-registry-md" data-file-link>examples\doc-demo\registry.md:70</a></td>
+          <td><span class="badge dynamic">動的</span></td>
+          <td><code>id</code>, <code>hasReviewState</code>, <code>reviewState</code>, <code>hasPrimaryLabel</code>, <code>primaryLabelId</code>, <code>hasMemo</code>, <code>memo</code></td>
+          <td><span class="muted">なし</span></td>
+        </tr><tr>
+          <td><a href="#q-fragments-captureHasLabel" data-query-link="fragments.captureHasLabel"><code>fragments.captureHasLabel</code></a></td>
+          <td class="file-path"><a href="#f-C--fw-sql-registry-examples-doc-demo-registry-md" data-file-link>examples\doc-demo\registry.md:134</a></td>
+          <td><span class="badge ">静的</span></td>
+          <td><code>labelName</code></td>
+          <td><span class="muted">なし</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>ファイル</h2>
+    <div class="file-summary">
+      
+        <section id="f-C--fw-sql-registry-examples-doc-demo-captures-search-md" class="file-card">
+          <strong>examples\doc-demo\captures\search.md</strong>
+          <div class="muted">0 query definition(s)</div>
+        </section>
+      
+        <section id="f-C--fw-sql-registry-examples-doc-demo-captures-summary-md" class="file-card">
+          <strong>examples\doc-demo\captures\summary.md</strong>
+          <div class="muted">0 query definition(s)</div>
+        </section>
+      
+        <section id="f-C--fw-sql-registry-examples-doc-demo-captures-update-md" class="file-card">
+          <strong>examples\doc-demo\captures\update.md</strong>
+          <div class="muted">0 query definition(s)</div>
+        </section>
+      
+        <section id="f-C--fw-sql-registry-examples-doc-demo-fragments-capture-md" class="file-card">
+          <strong>examples\doc-demo\fragments\capture.md</strong>
+          <div class="muted">0 query definition(s)</div>
+        </section>
+      
+        <section id="f-C--fw-sql-registry-examples-doc-demo-registry-md" class="file-card">
+          <strong>examples\doc-demo\registry.md</strong>
+          <div class="muted">4 query definition(s)</div>
+        </section>
+      
+    </div>
+  </section>
+
+  
+    <article id="q-captures-dailySummary" class="panel query-detail" data-query-id="captures.dailySummary" hidden>
+      <h3><code>captures.dailySummary</code> <span class="badge ">静的</span></h3>
+      <p class="file-path"><strong>定義元:</strong> examples\doc-demo\registry.md:111</p>
+      <p>Daily capture summary
+Counts captures by day and review state for a workspace dashboard.
+# Capture fragments</p>
+      <p><strong>タグ:</strong> <span class="badge">captures</span> <span class="badge">dashboard</span></p>
+      <h4>パラメータ</h4>
+      <table class="mini-table"><thead><tr><th>物理名</th><th>論理名</th><th>型</th></tr></thead><tbody><tr><td><code>workspaceId</code></td><td>Workspace ID</td><td><code>string</code></td></tr><tr><td><code>capturedFrom</code></td><td>Captured from</td><td><code>date</code></td></tr><tr><td><code>capturedTo</code></td><td>Captured to</td><td><code>date</code></td></tr></tbody></table>
+      <h4>参照元</h4>
+      <p class="muted">なし</p>
+      
+      <h4>SQL定義</h4>
+      <section class="sql-block"><div class="block-title">SQL <span>default</span></div><pre><code>SELECT
+  date(c.captured_at) AS capture_date,
+  c.review_state,
+  COUNT(*) AS capture_count
+FROM capture_files c
+WHERE c.workspace_id = :workspaceId
+  AND c.captured_at &gt;= :capturedFrom
+  AND c.captured_at &lt; :capturedTo
+GROUP BY date(c.captured_at), c.review_state
+ORDER BY capture_date DESC, c.review_state ASC</code></pre><div class="block-title">EXPLAIN</div><pre><code>EXPLAIN SELECT
+  date(c.captured_at) AS capture_date,
+  c.review_state,
+  COUNT(*) AS capture_count
+FROM capture_files c
+WHERE c.workspace_id = :workspaceId
+  AND c.captured_at &gt;= :capturedFrom
+  AND c.captured_at &lt; :capturedTo
+GROUP BY date(c.captured_at), c.review_state
+ORDER BY capture_date DESC, c.review_state ASC</code></pre></section>
+    </article>
+  
+    <article id="q-captures-search" class="panel query-detail" data-query-id="captures.search" hidden>
+      <h3><code>captures.search</code> <span class="badge dynamic">動的</span></h3>
+      <p class="file-path"><strong>定義元:</strong> examples\doc-demo\registry.md:6</p>
+      <p>Capture review list
+Searches capture rows for the review screen with optional status, label, and time filters.
+# Capture update queries</p>
+      <p><strong>タグ:</strong> <span class="badge">captures</span> <span class="badge">review</span> <span class="badge">list</span></p>
+      <h4>パラメータ</h4>
+      <table class="mini-table"><thead><tr><th>物理名</th><th>論理名</th><th>型</th></tr></thead><tbody><tr><td><code>workspaceId</code></td><td>Workspace ID</td><td><code>string</code></td></tr><tr><td><code>reviewState</code></td><td>Review state</td><td><code>string</code></td></tr><tr><td><code>labelName</code></td><td>Label name</td><td><code>string</code></td></tr><tr><td><code>capturedFrom</code></td><td>Captured from</td><td><code>date</code></td></tr><tr><td><code>capturedTo</code></td><td>Captured to</td><td><code>date</code></td></tr><tr><td><code>limitNum</code></td><td>Page size</td><td><code>integer</code></td></tr><tr><td><code>offsetNum</code></td><td>Page offset</td><td><code>integer</code></td></tr></tbody></table>
+      <h4>参照元</h4>
+      <p class="muted">なし</p>
+      <h4>Builder定義</h4><pre><code>if (params.reviewState) {
+  append(&#39;where&#39;, &#39;AND c.review_state = :reviewState&#39;, {
+    reviewState: params.reviewState
+  });
+}
+
+if (params.labelName) {
+  append(&#39;where&#39;, &#39;AND EXISTS (&#39;);
+  appendQuery(&#39;where&#39;, &#39;<a href="#q-fragments-captureHasLabel" data-query-link="fragments.captureHasLabel">fragments.captureHasLabel</a>&#39;, {
+    labelName: params.labelName
+  });
+  append(&#39;where&#39;, &#39;)&#39;);
+}
+
+if (params.capturedFrom) {
+  append(&#39;where&#39;, &#39;AND c.captured_at &gt;= :capturedFrom&#39;, {
+    capturedFrom: params.capturedFrom
+  });
+}
+
+if (params.capturedTo) {
+  append(&#39;where&#39;, &#39;AND c.captured_at &lt; :capturedTo&#39;, {
+    capturedTo: params.capturedTo
+  });
+}
+
+limit(&#39;page&#39;, params.limitNum);
+offset(&#39;page&#39;, params.offsetNum);</code></pre>
+      <h4>SQL定義</h4>
+      <section class="sql-block"><div class="block-title">SQL <span>default</span></div><pre><code>SELECT
+  c.id,
+  c.file_name,
+  c.relative_path,
+  c.review_state,
+  c.primary_label_id,
+  lm.display_name AS primary_label_name,
+  c.captured_at,
+  c.updated_at
+FROM capture_files c
+LEFT JOIN label_master lm
+  ON lm.id = c.primary_label_id
+WHERE c.workspace_id = :workspaceId
+/*#where*/
+ORDER BY c.captured_at DESC, c.id DESC
+/*#page*/</code></pre><div class="block-title">動的SQL生成</div><div class="dynamic-sql" data-dynamic-sql="captures.search"></div><div class="block-title">EXPLAIN</div><pre><code data-dynamic-explain-output="captures.search">EXPLAIN SELECT
+  c.id,
+  c.file_name,
+  c.relative_path,
+  c.review_state,
+  c.primary_label_id,
+  lm.display_name AS primary_label_name,
+  c.captured_at,
+  c.updated_at
+FROM capture_files c
+LEFT JOIN label_master lm
+  ON lm.id = c.primary_label_id
+WHERE c.workspace_id = :workspaceId
+/*#where*/
+ORDER BY c.captured_at DESC, c.id DESC
+/*#page*/</code></pre></section>
+    </article>
+  
+    <article id="q-captures-updateReview" class="panel query-detail" data-query-id="captures.updateReview" hidden>
+      <h3><code>captures.updateReview</code> <span class="badge dynamic">動的</span></h3>
+      <p class="file-path"><strong>定義元:</strong> examples\doc-demo\registry.md:70</p>
+      <p>Update capture review fields
+Updates only review fields requested from the detail screen.
+# Capture summary queries</p>
+      <p><strong>タグ:</strong> <span class="badge">captures</span> <span class="badge">review</span> <span class="badge">update</span></p>
+      <h4>パラメータ</h4>
+      <table class="mini-table"><thead><tr><th>物理名</th><th>論理名</th><th>型</th></tr></thead><tbody><tr><td><code>id</code></td><td>Capture ID</td><td><code>string</code></td></tr><tr><td><code>hasReviewState</code></td><td>Has review state</td><td><code>boolean</code></td></tr><tr><td><code>reviewState</code></td><td>Review state</td><td><code>string</code></td></tr><tr><td><code>hasPrimaryLabel</code></td><td>Has primary label</td><td><code>boolean</code></td></tr><tr><td><code>primaryLabelId</code></td><td>Primary label ID</td><td><code>any</code></td></tr><tr><td><code>hasMemo</code></td><td>Has memo</td><td><code>boolean</code></td></tr><tr><td><code>memo</code></td><td>Review memo</td><td><code>string</code></td></tr></tbody></table>
+      <h4>参照元</h4>
+      <p class="muted">なし</p>
+      <h4>Builder定義</h4><pre><code>if (params.hasReviewState) {
+  set(&#39;review_state = :reviewState&#39;, {
+    reviewState: params.reviewState
+  });
+}
+
+if (params.hasPrimaryLabel) {
+  set(&#39;primary_label_id = :primaryLabelId&#39;, {
+    primaryLabelId: params.primaryLabelId
+  });
+}
+
+if (params.hasMemo) {
+  set(&#39;review_memo = :memo&#39;, {
+    memo: params.memo
+  });
+}</code></pre>
+      <h4>SQL定義</h4>
+      <section class="sql-block"><div class="block-title">SQL <span>default</span></div><pre><code>UPDATE capture_files
+SET
+/*#set*/
+WHERE id = :id</code></pre><div class="block-title">EXPLAIN</div><pre><code>EXPLAIN UPDATE capture_files
+SET
+/*#set*/
+WHERE id = :id</code></pre></section>
+    </article>
+  
+    <article id="q-fragments-captureHasLabel" class="panel query-detail" data-query-id="fragments.captureHasLabel" hidden>
+      <h3><code>fragments.captureHasLabel</code> <span class="badge ">静的</span></h3>
+      <p class="file-path"><strong>定義元:</strong> examples\doc-demo\registry.md:134</p>
+      <p>Capture label filter
+Subquery fragment used by capture search label filtering.</p>
+      <p><strong>タグ:</strong> <span class="badge">fragments</span> <span class="badge">captures</span></p>
+      <h4>パラメータ</h4>
+      <table class="mini-table"><thead><tr><th>物理名</th><th>論理名</th><th>型</th></tr></thead><tbody><tr><td><code>labelName</code></td><td>Label name</td><td><code>string</code></td></tr></tbody></table>
+      <h4>参照元</h4>
+      <table class="mini-table"><thead><tr><th>SQL ID</th><th>説明</th></tr></thead><tbody><tr><td><a href="#q-captures-search" data-query-link="captures.search"><code>captures.search</code></a></td><td>Capture review list<br>Searches capture rows for the review screen with optional status, label, and time filters.<br># Capture update queries</td></tr></tbody></table>
+      
+      <h4>SQL定義</h4>
+      <section class="sql-block"><div class="block-title">SQL <span>default</span></div><pre><code>SELECT 1
+FROM capture_label_links cl
+JOIN label_master l
+  ON l.id = cl.label_id
+WHERE cl.capture_id = c.id
+  AND l.display_name = :labelName</code></pre><div class="block-title">EXPLAIN</div><pre><code>EXPLAIN SELECT 1
+FROM capture_label_links cl
+JOIN label_master l
+  ON l.id = cl.label_id
+WHERE cl.capture_id = c.id
+  AND l.display_name = :labelName</code></pre></section>
+    </article>
+  
+</main>
+</div>
+<script type="application/json" id="dynamic-sql-data">[{"queryId":"captures.search","baseSql":"SELECT\n  c.id,\n  c.file_name,\n  c.relative_path,\n  c.review_state,\n  c.primary_label_id,\n  lm.display_name AS primary_label_name,\n  c.captured_at,\n  c.updated_at\nFROM capture_files c\nLEFT JOIN label_master lm\n  ON lm.id = c.primary_label_id\nWHERE c.workspace_id = :workspaceId\n/*#where*/\nORDER BY c.captured_at DESC, c.id DESC\n/*#page*/","explainPrefix":"EXPLAIN","always":[{"type":"append","slot":"page","sql":"LIMIT :limit_page"},{"type":"append","slot":"page","sql":"OFFSET :offset_page"}],"branches":[{"id":"captures.search-branch-1","label":"params.reviewState","ops":[{"type":"append","slot":"where","sql":"AND c.review_state = :reviewState"}]},{"id":"captures.search-branch-2","label":"params.labelName","ops":[{"type":"append","slot":"where","sql":"AND EXISTS ("},{"type":"append","slot":"where","sql":"SELECT 1\nFROM capture_label_links cl\nJOIN label_master l\n  ON l.id = cl.label_id\nWHERE cl.capture_id = c.id\n  AND l.display_name = :labelName","queryName":"fragments.captureHasLabel"},{"type":"append","slot":"where","sql":")"}]},{"id":"captures.search-branch-3","label":"params.capturedFrom","ops":[{"type":"append","slot":"where","sql":"AND c.captured_at >= :capturedFrom"}]},{"id":"captures.search-branch-4","label":"params.capturedTo","ops":[{"type":"append","slot":"where","sql":"AND c.captured_at \u003c :capturedTo"}]}]}]</script>
+<script src="./app.js"></script>
+</body>
+</html>

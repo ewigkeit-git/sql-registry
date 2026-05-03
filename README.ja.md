@@ -251,11 +251,14 @@ npx sql-registry validate --dialect pg ./sql
 npx sql-registry validate --json ./sql
 npx sql-registry doc --out sql-registry-docs.html ./sql
 npx sql-registry doc --lang ja --out sql-registry-docs.html ./sql
+npx sql-registry doc --theme dark --out sql-registry-docs.html ./sql
 ```
 
 重複したクエリ名、未宣言パラメータ、不正な builder script、未知の `appendQuery()` 参照などを検出します。
 
 `doc` コマンドは、SQL ID 一覧、ファイル一覧、クエリ定義、SQL ブロック、パラメータ、builder script、`appendQuery()` リンク、EXPLAIN 断片を含む静的 HTML ドキュメントを出力します。
+出力 HTML と同じフォルダに `style.css` と `app.js` も出力します。
+生成されたドキュメントはデフォルトで閲覧環境のダークテーマに追従し、ページ上でもテーマを切り替えられます。`--theme auto`、`--theme light`、`--theme dark` で初期表示テーマを指定できます。
 doc UI の対応言語は `en`, `ja`, `ko`, `zh-CN`, `zh-TW`, `es`, `fr`, `de`, `ru` です。
 
 ## import
