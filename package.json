@@ -1,6 +1,6 @@
 {
   "name": "sql-registry",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "Lightweight SQL registry with named parameters",
   "repository": {
     "type": "git",
