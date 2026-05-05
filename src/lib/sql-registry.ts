@@ -22,10 +22,26 @@ import {
 const QUERY_ID_PATTERN = /^[A-Za-z0-9_.-]+$/;
 const STATIC_SLOT_MARKER_PATTERN = /\/\*#[A-Za-z_][A-Za-z0-9_.-]*(?:\s+-\s*.*?)?\*\//s;
 
+export type ParamType =
+  | "any"
+  | "string"
+  | "text"
+  | "number"
+  | "float"
+  | "integer"
+  | "int"
+  | "bigint"
+  | "boolean"
+  | "bool"
+  | "date"
+  | "datetime"
+  | "timestamp"
+  | "json";
+
 export type ParamMeta = {
   name: string;
   description: string;
-  type?: string;
+  type?: ParamType;
 };
 
 export type QueryMeta = {
@@ -182,7 +198,7 @@ function parseParamMeta(value: string): ParamMeta {
   };
 
   if (match[2]) {
-    meta.type = normalizeParamType(match[2]) || undefined;
+    meta.type = (normalizeParamType(match[2]) || undefined) as ParamType | undefined;
   }
 
   return meta;

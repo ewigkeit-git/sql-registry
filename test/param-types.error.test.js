@@ -377,6 +377,18 @@ test("int alias rejects the same invalid values as integer", async () => {
   assertInvalidParam(registry, "count", 1.5);
 });
 
+test("bigint params reject fractional unsafe and non-integer string values", async () => {
+  const registry = registryWithParam(
+    "id",
+    "bigint",
+    "SELECT * FROM users WHERE id = :id"
+  );
+
+  for (const value of [1.5, Number.MAX_SAFE_INTEGER + 1, "1.5", "", "123abc", {}, []]) {
+    assertInvalidParam(registry, "id", value);
+  }
+});
+
 test("boolean params reject numeric and string booleans", async () => {
   const registry = registryWithParam(
     "active",

@@ -66,6 +66,27 @@ test("param type aliases normalize datetime and timestamp to date", async () => 
   assert.strictEqual(normalizeParamType("timestamp"), "date");
 });
 
+test("param type aliases normalize bigint", async () => {
+  assert.strictEqual(normalizeParamType("bigint"), "bigint");
+  assert.strictEqual(normalizeParamType("BIGINT"), "bigint");
+});
+
+test("bigint params accept bigint integer strings and safe integer numbers", async () => {
+  const registry = registryWithParam(
+    "id",
+    "bigint",
+    "SELECT * FROM users WHERE id = :id"
+  );
+
+  assert.deepStrictEqual(registry.bind("test", { id: 9223372036854775807n }).values, [
+    9223372036854775807n
+  ]);
+  assert.deepStrictEqual(registry.bind("test", { id: "9223372036854775807" }).values, [
+    "9223372036854775807"
+  ]);
+  assert.deepStrictEqual(registry.bind("test", { id: 123 }).values, [123]);
+});
+
 test("timestamp params accept database datetime strings", async () => {
   const registry = registryWithParam(
     "createdAt",

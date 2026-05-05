@@ -3,6 +3,7 @@ export const PARAM_TYPES = Object.freeze({
   STRING: "string",
   NUMBER: "number",
   INTEGER: "integer",
+  BIGINT: "bigint",
   BOOLEAN: "boolean",
   DATE: "date",
   JSON: "json"
@@ -16,6 +17,7 @@ const TYPE_ALIASES: Record<string, string> = Object.freeze({
   float: PARAM_TYPES.NUMBER,
   integer: PARAM_TYPES.INTEGER,
   int: PARAM_TYPES.INTEGER,
+  bigint: PARAM_TYPES.BIGINT,
   boolean: PARAM_TYPES.BOOLEAN,
   bool: PARAM_TYPES.BOOLEAN,
   date: PARAM_TYPES.DATE,
@@ -71,6 +73,12 @@ function isPlainJsonValue(value: unknown, seen = new Set<object>()): boolean {
   return false;
 }
 
+function isBigIntValue(value: unknown): boolean {
+  if (typeof value === "bigint") return true;
+  if (Number.isSafeInteger(value)) return true;
+  return typeof value === "string" && /^-?\d+$/.test(value);
+}
+
 function isValueOfType(value: unknown, type: string) {
   if (value === undefined) return false;
   if (value === null || !type || type === PARAM_TYPES.ANY) return true;
@@ -82,6 +90,8 @@ function isValueOfType(value: unknown, type: string) {
       return typeof value === "number" && Number.isFinite(value);
     case PARAM_TYPES.INTEGER:
       return Number.isSafeInteger(value);
+    case PARAM_TYPES.BIGINT:
+      return isBigIntValue(value);
     case PARAM_TYPES.BOOLEAN:
       return typeof value === "boolean";
     case PARAM_TYPES.DATE:

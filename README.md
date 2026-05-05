@@ -175,6 +175,9 @@ Supported metadata:
 - fenced `sql` blocks
 - fenced `ts builder` or `js builder` blocks
 
+Supported param types are `any`, `string`/`text`, `number`/`float`, `integer`/`int`, `bigint`, `boolean`/`bool`, `date`/`datetime`/`timestamp`, and `json`.
+`integer` validates JavaScript safe integers. `bigint` accepts JavaScript `bigint`, integer strings, and safe integer numbers so database `BIGINT` values can be passed without precision loss.
+
 Dialect-specific SQL can be declared with a dialect name:
 
 ````md

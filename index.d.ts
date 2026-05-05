@@ -7,6 +7,7 @@ export type ParamType =
   | "float"
   | "integer"
   | "int"
+  | "bigint"
   | "boolean"
   | "bool"
   | "date"
