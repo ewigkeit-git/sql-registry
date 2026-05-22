@@ -379,7 +379,7 @@ It is meant to sit beside existing drivers, ORMs, and query builders for SQL tha
 
 This project is early and intentionally small.
 
-- Current package version: `0.3.0`
+- Current package version: `0.4.1`
 - Runtime: CommonJS package with TypeScript declarations
 - License: MIT
 - API stability: pre-1.0, breaking changes may occur

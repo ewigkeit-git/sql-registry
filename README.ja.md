@@ -351,7 +351,7 @@ sql-registry は、次の役割を担うためのものではありません。
 
 ## プロジェクト状態
 
-- 現在の package version: `0.3.0`
+- 現在の package version: `0.4.1`
 - 実行形式: TypeScript 型定義付きの CommonJS package
 - License: MIT
 - API 安定性: pre-1.0 のため、破壊的変更が入る可能性があります
