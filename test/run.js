@@ -348,6 +348,37 @@ SELECT * FROM users WHERE id = :id AND name = :name
   }
 });
 
+test("CLI validate reports list items that look like unsupported metadata keys", async () => {
+  const fixtureDir = path.join(__dirname, ".tmp-cli", "invalid-list-meta");
+  removeFixtureDir(fixtureDir);
+
+  try {
+    writeFixture(path.join(fixtureDir, "queries.md"), `
+## users.find
+
+- note: shown on admin screen
+param: id:integer - User id
+
+\`\`\`sql
+SELECT * FROM users WHERE id = :id
+\`\`\`
+`);
+
+    const output = { stdout: "", stderr: "" };
+    const stdout = { write: text => { output.stdout += text; } };
+    const stderr = { write: text => { output.stderr += text; } };
+    const status = cli.run(["validate", fixtureDir], stdout, stderr);
+
+    assert.strictEqual(status, 1);
+    assert.match(
+      output.stderr,
+      /queries\.md:3: \[users\.find\] unsupported list item that looks like metadata: note \(remove the colon or use description:\)/
+    );
+  } finally {
+    removeFixtureDir(fixtureDir);
+  }
+});
+
 test("CLI doc generates an HTML registry document from the example registry", async () => {
   const exampleDir = path.join(__dirname, "..", "examples", "doc-demo");
   const fixtureDir = path.join(__dirname, ".tmp-cli", "doc");
@@ -415,6 +446,41 @@ test("CLI doc generates an HTML registry document from the example registry", as
     assert.match(js, /dynamic-line-added/);
     assert.match(js, /--branch-color:/);
     assert.match(js, /^\(function\(\)\{var _0=/);
+  } finally {
+    removeFixtureDir(fixtureDir);
+  }
+});
+
+test("CLI doc reports list items that look like unsupported metadata keys", async () => {
+  const fixtureDir = path.join(__dirname, ".tmp-cli", "doc-invalid-list-meta");
+  const outFile = path.join(fixtureDir, "docs.html");
+  removeFixtureDir(fixtureDir);
+
+  try {
+    writeFixture(path.join(fixtureDir, "root.md"), `
+@import "./child.md" as users
+`);
+    writeFixture(path.join(fixtureDir, "child.md"), `
+## find
+
+- screen: admin
+param: id:integer - User id
+
+\`\`\`sql
+SELECT * FROM users WHERE id = :id
+\`\`\`
+`);
+
+    const output = { stdout: "", stderr: "" };
+    const stdout = { write: text => { output.stdout += text; } };
+    const stderr = { write: text => { output.stderr += text; } };
+    const status = cli.run(["doc", "--out", outFile, fixtureDir], stdout, stderr);
+
+    assert.strictEqual(status, 1);
+    assert.match(
+      output.stderr,
+      /child\.md:3: \[users\.find\] unsupported list item that looks like metadata: screen \(remove the colon or use description:\)/
+    );
   } finally {
     removeFixtureDir(fixtureDir);
   }

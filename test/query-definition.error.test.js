@@ -251,6 +251,69 @@ test("SqlRegistry rejects fenced blocks outside query definitions", async () => 
   );
 });
 
+test("SqlRegistry rejects list items that look like unsupported metadata keys", async () => {
+  const fixturePath = path.join(__dirname, ".tmp", "registry-list-item-unknown-meta.md");
+  writeFixture(fixturePath, [
+    "## users.find",
+    "",
+    "- note: shown on admin screen",
+    "param: id:int - User id",
+    "",
+    "```sql",
+    "SELECT * FROM users WHERE id = :id",
+    "```",
+    ""
+  ]);
+
+  const registry = new SqlRegistry();
+
+  assert.throws(
+    () => registry.loadFile(fixturePath),
+    error => {
+      assert.match(
+        error.errors.join("\n"),
+        /registry-list-item-unknown-meta\.md:3: \[users\.find\] unsupported list item that looks like metadata: note \(remove the colon or use description:\)/
+      );
+      return true;
+    }
+  );
+});
+
+test("SqlRegistry reports imported list items that look like unsupported metadata keys", async () => {
+  const fixtureDir = path.join(__dirname, ".tmp", "registry-import-list-item-unknown-meta");
+  const rootPath = path.join(fixtureDir, "root.md");
+  const childPath = path.join(fixtureDir, "child.md");
+
+  writeFixture(rootPath, [
+    '@import "./child.md" as users',
+    ""
+  ]);
+  writeFixture(childPath, [
+    "## find",
+    "",
+    "- screen: admin",
+    "param: id:int - User id",
+    "",
+    "```sql",
+    "SELECT * FROM users WHERE id = :id",
+    "```",
+    ""
+  ]);
+
+  const registry = new SqlRegistry();
+
+  assert.throws(
+    () => registry.loadFile(rootPath),
+    error => {
+      assert.match(
+        error.errors.join("\n"),
+        /registry-import-list-item-unknown-meta[\\\/]child\.md:3: \[users\.find\] unsupported list item that looks like metadata: screen \(remove the colon or use description:\)/
+      );
+      return true;
+    }
+  );
+});
+
 test("SqlRegistry rejects unclosed fenced blocks outside query definitions", async () => {
   const fixturePath = path.join(__dirname, ".tmp", "registry-unclosed-fence-outside-query.md");
   writeFixture(fixturePath, [

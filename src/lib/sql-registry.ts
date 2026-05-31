@@ -21,6 +21,7 @@ import {
 
 const QUERY_ID_PATTERN = /^[A-Za-z0-9_.-]+$/;
 const STATIC_SLOT_MARKER_PATTERN = /\/\*#[A-Za-z_][A-Za-z0-9_.-]*(?:\s+-\s*.*?)?\*\//s;
+const SUPPORTED_QUERY_META_KEYS = new Set(["description", "tags", "param", "orderable"]);
 
 export type ParamType =
   | "any"
@@ -70,6 +71,16 @@ export type ParseMarkdownResult = {
   queries: Record<string, QueryEntry>;
   errors: string[];
   files: string[];
+};
+
+type SourceLineInfo = {
+  filePath: string;
+  line: number;
+};
+
+type ResolvedMarkdown = {
+  text: string;
+  lineMap: SourceLineInfo[];
 };
 
 export type ImportDirective = {
@@ -231,6 +242,10 @@ function formatFenceInfo(info: string) {
 
 function stripMarkdownListMarker(text: string) {
   return text.replace(/^[-*+]\s+/, "");
+}
+
+function hasMarkdownListMarker(text: string) {
+  return /^[-*+]\s+/.test(text);
 }
 
 function findDuplicates(arr: string[]) {
@@ -578,7 +593,7 @@ export function resolveImports(
   stack: string[] = [],
   namespacePrefix = "",
   collectedFiles = new Set<string>()
-): string {
+): ResolvedMarkdown {
   const fullPath = path.resolve(filePath);
 
   if (stack.includes(fullPath)) {
@@ -600,17 +615,25 @@ export function resolveImports(
   const dir = path.dirname(fullPath);
   const lines = src.split(/\r?\n/);
   const out: string[] = [];
+  const lineMap: SourceLineInfo[] = [];
   let inFence = false;
 
-  for (const line of lines) {
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+    const line = lines[lineIndex];
+    const sourceLine = {
+      filePath: fullPath,
+      line: lineIndex + 1
+    };
     if (isFenceDelimiter(line)) {
       inFence = !inFence;
       out.push(line);
+      lineMap.push(sourceLine);
       continue;
     }
 
     if (inFence) {
       out.push(line);
+      lineMap.push(sourceLine);
       continue;
     }
 
@@ -618,6 +641,7 @@ export function resolveImports(
 
     if (!parsed) {
       out.push(applyNamespaceToHeadingLine(line, namespacePrefix));
+      lineMap.push(sourceLine);
       continue;
     }
 
@@ -648,18 +672,23 @@ export function resolveImports(
       if (importNamespace) metaParts.push(`ns=${nextPrefix}`);
       if (importDescription) metaParts.push(`desc=${importDescription}`);
       out.push(`<!-- import: ${importTarget}${metaParts.length ? " | " + metaParts.join(" | ") : ""} -->`);
+      lineMap.push(sourceLine);
     }
 
-    out.push(expanded);
+    out.push(expanded.text);
+    lineMap.push(...expanded.lineMap);
   }
 
-  return out.join("\n");
+  return {
+    text: out.join("\n"),
+    lineMap
+  };
 }
 
 export function parseMarkdownFile(filePath: string): ParseMarkdownResult {
   const collectedFiles = new Set<string>();
-  const src = resolveImports(filePath, [], "", collectedFiles);
-  const lines = src.split(/\r?\n/);
+  const resolved = resolveImports(filePath, [], "", collectedFiles);
+  const lines = resolved.text.split(/\r?\n/);
   const queries: Record<string, QueryEntry> = {};
   const errors: string[] = [];
   const sources: Record<string, QuerySourceInfo> = {};
@@ -669,21 +698,34 @@ export function parseMarkdownFile(filePath: string): ParseMarkdownResult {
   let currentParams: ParamMeta[] = [];
   let currentSql: Record<string, string> = {};
   let currentDescriptionFromHeading = false;
+  let currentFilePath = path.resolve(filePath);
   let currentQueryLine = 0;
   let currentSqlLines: Record<string, number> = {};
   let currentBuilderLine: number | undefined;
   let currentParamLines: Record<string, number> = {};
 
+  function sourceAt(lineNumber: number) {
+    return resolved.lineMap[lineNumber - 1] || {
+      filePath: path.resolve(filePath),
+      line: lineNumber
+    };
+  }
+
+  function sourceLocation(lineNumber: number) {
+    const source = sourceAt(lineNumber);
+    return location(source.filePath, source.line);
+  }
+
   function flush() {
     if (!currentName) return;
 
     if (queries[currentName]) {
-      errors.push(`${location(filePath, currentQueryLine)}: duplicate query name in file: ${currentName}`);
+      errors.push(`${location(currentFilePath, currentQueryLine)}: duplicate query name in file: ${currentName}`);
       return;
     }
 
     const source = {
-      filePath,
+      filePath: currentFilePath,
       queryLine: currentQueryLine,
       sqlLines: currentSqlLines,
       builderLine: currentBuilderLine,
@@ -714,15 +756,16 @@ export function parseMarkdownFile(filePath: string): ParseMarkdownResult {
       currentDescriptionFromHeading = Boolean(heading.description);
       currentParams = [];
       currentSql = {};
-      currentQueryLine = i + 1;
+      currentFilePath = sourceAt(i + 1).filePath;
+      currentQueryLine = sourceAt(i + 1).line;
       currentSqlLines = {};
       currentBuilderLine = undefined;
       currentParamLines = {};
 
       if (!currentName) {
-        errors.push(`${location(filePath, i + 1)}: empty query name`);
+        errors.push(`${sourceLocation(i + 1)}: empty query name`);
       } else if (!isValidQueryId(currentName)) {
-        errors.push(`${location(filePath, i + 1)}: [${currentName}] structure error: invalid query id: ${currentName}`);
+        errors.push(`${sourceLocation(i + 1)}: [${currentName}] structure error: invalid query id: ${currentName}`);
       }
 
       continue;
@@ -740,9 +783,9 @@ export function parseMarkdownFile(filePath: string): ParseMarkdownResult {
           }
         }
 
-        errors.push(`${location(filePath, fenceLine)}: fenced block outside query`);
+        errors.push(`${sourceLocation(fenceLine)}: fenced block outside query`);
         if (!closed) {
-          errors.push(`${location(filePath, fenceLine)}: unclosed fenced block outside query`);
+          errors.push(`${sourceLocation(fenceLine)}: unclosed fenced block outside query`);
         }
       }
 
@@ -765,43 +808,45 @@ export function parseMarkdownFile(filePath: string): ParseMarkdownResult {
       }
 
       if (!closed) {
-        errors.push(`${location(filePath, fenceLine)}: [${currentName}] unclosed fenced block`);
+        errors.push(`${sourceLocation(fenceLine)}: [${currentName}] unclosed fenced block`);
         break;
       }
 
       const content = contentLines.join("\n").trim();
       const sqlInfo = parseSqlInfo(info);
       if (sqlInfo.error) {
-        errors.push(`${location(filePath, fenceLine)}: [${currentName}] ${sqlInfo.error}`);
+        errors.push(`${sourceLocation(fenceLine)}: [${currentName}] ${sqlInfo.error}`);
         continue;
       }
 
       if (sqlInfo.dialect) {
         const dialect = sqlInfo.dialect;
         if (currentSql[dialect]) {
-          errors.push(`${location(filePath, fenceLine)}: [${currentName}][${dialect}] duplicate sql block for dialect: ${dialect}`);
+          errors.push(`${sourceLocation(fenceLine)}: [${currentName}][${dialect}] duplicate sql block for dialect: ${dialect}`);
         } else {
           currentSql[dialect] = content;
-          currentSqlLines[dialect] = fenceLine;
+          currentSqlLines[dialect] = sourceAt(fenceLine).line;
         }
         continue;
       }
 
       if (parseBuilderInfo(info)) {
         if ("builder" in currentMeta) {
-          errors.push(`${location(filePath, fenceLine)}: [${currentName}] duplicate builder block`);
+          errors.push(`${sourceLocation(fenceLine)}: [${currentName}] duplicate builder block`);
         } else {
           currentMeta.builder = content;
-          currentBuilderLine = fenceLine;
+          currentBuilderLine = sourceAt(fenceLine).line;
         }
         continue;
       }
 
-      errors.push(`${location(filePath, fenceLine)}: [${currentName}] unsupported fenced block info: ${formatFenceInfo(info)}`);
+      errors.push(`${sourceLocation(fenceLine)}: [${currentName}] unsupported fenced block info: ${formatFenceInfo(info)}`);
       continue;
     }
 
-    const text = stripMarkdownListMarker(line.trim());
+    const trimmedLine = line.trim();
+    const hadListMarker = hasMarkdownListMarker(trimmedLine);
+    const text = stripMarkdownListMarker(trimmedLine);
     if (!text) continue;
     if (text.startsWith("<!--")) {
       const commentLine = i + 1;
@@ -814,14 +859,14 @@ export function parseMarkdownFile(filePath: string): ParseMarkdownResult {
         }
       }
       if (!closed) {
-        errors.push(`${location(filePath, commentLine)}: [${currentName}] unclosed HTML comment`);
+        errors.push(`${sourceLocation(commentLine)}: [${currentName}] unclosed HTML comment`);
       }
       continue;
     }
 
     if (text === "orderable:") {
       if ("orderable" in currentMeta) {
-        errors.push(`${location(filePath, i + 1)}: [${currentName}] duplicate meta key: orderable`);
+        errors.push(`${sourceLocation(i + 1)}: [${currentName}] duplicate meta key: orderable`);
       } else {
         const orderable: Record<string, string> = {};
         let foundEntry = false;
@@ -841,7 +886,7 @@ export function parseMarkdownFile(filePath: string): ParseMarkdownResult {
             const key = orderableMatch[1];
             const column = orderableMatch[2].trim();
             if (!isSafeOrderableColumn(column)) {
-              errors.push(`${location(filePath, i + 2)}: [${currentName}] invalid orderable column expression for ${key}: ${column}`);
+              errors.push(`${sourceLocation(i + 2)}: [${currentName}] invalid orderable column expression for ${key}: ${column}`);
             } else {
               orderable[key] = column;
             }
@@ -850,7 +895,7 @@ export function parseMarkdownFile(filePath: string): ParseMarkdownResult {
         }
 
         if (!foundEntry) {
-          errors.push(`${location(filePath, i + 1)}: [${currentName}] orderable block is empty`);
+          errors.push(`${sourceLocation(i + 1)}: [${currentName}] orderable block is empty`);
         } else {
           currentMeta.orderable = orderable;
         }
@@ -876,16 +921,16 @@ export function parseMarkdownFile(filePath: string): ParseMarkdownResult {
       try {
         const param = parseParamMeta(value);
         currentParams.push(param);
-        currentParamLines[param.name] = i + 1;
+        currentParamLines[param.name] = sourceAt(i + 1).line;
       } catch (err: unknown) {
-        errors.push(`${location(filePath, i + 1)}: [${currentName}] ${getErrorMessage(err)}`);
+        errors.push(`${sourceLocation(i + 1)}: [${currentName}] ${getErrorMessage(err)}`);
       }
       continue;
     }
 
     if (key === "description") {
       if ("description" in currentMeta && !currentDescriptionFromHeading) {
-        errors.push(`${location(filePath, i + 1)}: [${currentName}] duplicate meta key: description`);
+        errors.push(`${sourceLocation(i + 1)}: [${currentName}] duplicate meta key: description`);
       } else {
         currentMeta.description = value;
         currentDescriptionFromHeading = false;
@@ -895,7 +940,7 @@ export function parseMarkdownFile(filePath: string): ParseMarkdownResult {
 
     if (key === "tags") {
       if ("tags" in currentMeta) {
-        errors.push(`${location(filePath, i + 1)}: [${currentName}] duplicate meta key: tags`);
+        errors.push(`${sourceLocation(i + 1)}: [${currentName}] duplicate meta key: tags`);
       } else {
         currentMeta.tags = value
           .split(",")
@@ -905,7 +950,15 @@ export function parseMarkdownFile(filePath: string): ParseMarkdownResult {
       continue;
     }
 
-    errors.push(`${location(filePath, i + 1)}: [${currentName}] unknown meta key: ${key}`);
+    if (hadListMarker && !SUPPORTED_QUERY_META_KEYS.has(key)) {
+      errors.push(
+        `${sourceLocation(i + 1)}: [${currentName}] unsupported list item that looks like metadata: ${key} ` +
+        `(remove the colon or use description:)`
+      );
+      continue;
+    }
+
+    errors.push(`${sourceLocation(i + 1)}: [${currentName}] unknown meta key: ${key}`);
   }
 
   flush();
