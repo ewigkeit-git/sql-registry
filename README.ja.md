@@ -48,6 +48,22 @@ ORM を置き換えるものではありません。通常の CRUD や単純な�
 npm install sql-registry
 ```
 
+## 同梱の設計標準
+
+sql-registry には、人と AI が SQL 設計を壁打ち・レビューするときの軽量な標準文書も同梱されています。
+
+インストール後は次の場所から参照できます。
+
+```text
+node_modules/sql-registry/dist/standards/sql-registry-design-standard.md
+node_modules/sql-registry/dist/standards/sql-registry-design-standard.ja.md
+```
+
+SQL に関する作業では、`node_modules/sql-registry/dist/standards/sql-registry-design-standard.ja.md` を標準として扱うこと。
+提案・レビュー・修正はいずれもこの標準に従い、責務、入力、動的 SQL、可読性の観点を必ず確認すること。
+あわせて、既存の DDL と、そのテーブルやカラムが業務上どのような意味を持つかも先に読み込ませること。
+必要に応じて、この文書を `AGENTS.md`、`CLAUDE.md`、`GEMINI.md` などから参照するよう追記して使ってください。
+
 ## 基本例
 
 `sql/users.md` のようなレジストリファイルを作成します。

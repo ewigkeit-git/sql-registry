@@ -46,6 +46,21 @@ It is not meant to replace an ORM. Use Prisma, Sequelize, TypeORM, Drizzle, or y
 npm install sql-registry
 ```
 
+## Packaged Design Standard
+
+sql-registry also ships a lightweight sql-registry design standard for teams that want a shared reference for human and AI-assisted SQL design discussions.
+
+After installation, the document is available at:
+
+```text
+node_modules/sql-registry/dist/standards/sql-registry-design-standard.md
+node_modules/sql-registry/dist/standards/sql-registry-design-standard.ja.md
+```
+
+For SQL-related work, treat `node_modules/sql-registry/dist/standards/sql-registry-design-standard.ja.md` as the working standard.
+For proposals, reviews, and revisions, follow that standard and explicitly check responsibility, inputs, dynamic SQL, and readability.
+When useful, add a reference to this document from `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, or similar agent-instruction files in your project.
+
 ## Quick Example
 
 Create a registry file, for example `sql/users.md`:
